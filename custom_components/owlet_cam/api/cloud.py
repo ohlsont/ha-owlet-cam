@@ -25,7 +25,7 @@ _FIREBASE_SIGN_IN_URL: Final = (
 )
 _FIREBASE_REFRESH_URL: Final = "https://securetoken.googleapis.com/v1/token"
 _KMS_URL: Final = "https://camera-kms.owletdata.com/kms/{dsn}"
-_ANDROID_PACKAGE: Final = "com.owletcare.sleep"
+_ANDROID_PACKAGE: Final = "com.owletcare.owletcare"
 _ANDROID_CERT: Final = "2A3BC26DB0B8B0792DBE28E6FFDC2598F9B12B74"
 _TOKEN_REFRESH_MARGIN: Final = timedelta(minutes=2)
 _DEFAULT_TIMEOUT: Final = 20.0

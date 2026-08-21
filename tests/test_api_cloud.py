@@ -115,7 +115,7 @@ async def test_successful_region_login_and_kms(
     assert metadata.av_password_available
     assert metadata.token_expiry > datetime.now(UTC)
     auth_request = aioclient_mock.mock_calls[0]
-    assert auth_request[3]["X-Android-Package"] == "com.owletcare.sleep"
+    assert auth_request[3]["X-Android-Package"] == "com.owletcare.owletcare"
     assert auth_request[3]["X-Android-Cert"]
     kms_request = aioclient_mock.mock_calls[1]
     assert kms_request[3]["Authorization"] == ID_TOKEN

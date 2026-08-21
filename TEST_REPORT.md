@@ -6,7 +6,7 @@ or real-system evidence.
 | Milestone | Commit | Integration version | Home Assistant version | Home Assistant OS version | Architecture | Camera model | Camera firmware | Automated tests | Yellow test | Real camera test | Result | Evidence | Unperformed tests | Known issues |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 — HACS scaffold and lifecycle | `67fae5f` | 0.1.0 | 2026.8.2 current; 2024.5.0 minimum at that milestone | HAOS 18.2 identified through authenticated read-only HA-MCP health evidence | AArch64 Home Assistant Yellow identified; integration not installed | None | None | **Passed locally:** original 6-test lifecycle suite; later Milestone 1 suite continues to cover lifecycle | Unperformed | Not applicable | **Automated gate passed; public HACS installation deferred by user** | Local commands and read-only system-health evidence on 2026-08-21 | HACS Action, Hassfest in GitHub context, and the ten physical install/lifecycle/log checks | Public repository intentionally deferred until core functionality works |
-| 1 — Cloud authentication and KMS | `probe/local-video` working tree | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 target identified; integration not installed | AArch64 Yellow target; tests executed on arm64 macOS | None | None | **Passed locally:** 70 tests at 90.13% branch-aware coverage; Ruff, mypy, secret and release checks passed | Unperformed | Unperformed | **Real-account gate failed at authentication; KMS was not contacted** | Signed Dream 3.36.0 application identity and Firebase Auth projects were verified locally; a redacted World/US request returned `invalid_credentials`, while Europe returned HTTP 401 before authentication | KMS lookup, diagnostics/log search, wrong-password correction on Yellow, camera connection and all media tests | The user must first verify that the supplied account can sign into the official app with typed email/password rather than an Apple/Google-only login; no further credential retries will be automated until then |
+| 1 — Cloud authentication and KMS | `probe/local-video` working tree | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 target identified; integration not installed | AArch64 Yellow target; tests executed on arm64 macOS | None | None | **Passed locally:** 70 tests at 90.13% branch-aware coverage; Ruff, mypy, secret and release checks passed | Unperformed | Unperformed | **Real-account gate failed at authentication; KMS was not contacted** | The user confirmed EMEA in the official app UI. A redacted World/US request returned `invalid_credentials`; Europe returned HTTP 401 before password validation with both Dream and legacy Owlet Care client identities | KMS lookup, diagnostics/log search, wrong-password correction on Yellow, camera connection and all media tests | Verify successful typed email/password login in the official EMEA app; then investigate the additional Firebase client metadata or attestation required by the Europe project without using traffic interception |
 | 2 — External bridge | — | — | — | — | — | — | — | Unperformed | Unperformed | Unperformed | Not started | — | All | Blocked by Milestone 0 gate |
 | 3–8 — Embedded runtime through stable release | `probe/local-video` working tree | 0.2.0 base; no embedded release | Not applicable to local spike | Not applicable to local spike | ARM64 macOS host; Linux/ARM64 Docker target | None supplied | None supplied | **Partial feasibility evidence:** 17 focused archive/ELF tests; full suite 70 passed at 90.13% coverage; Ruff, mypy, release and secret checks passed | Unperformed | Unperformed | **Local extraction and Bionic load sub-gates passed; no embedded milestone gate passed** | Local commands on 2026-08-21; exact redacted results below | KMS handoff, camera connection, frames, FFprobe, in-Core Yellow runtime/lifecycle | User explicitly prioritized proving real local video before Home Assistant installation; previous stable work remains on `build/milestone-1` |
 
@@ -97,21 +97,25 @@ or stream claim is made by this report.
   flow recovery, duplicate protection, reauth, reconfigure, grouped options,
   setup retry/auth failure, unload/reload and entity property isolation are
   covered by sanitized tests.
-- A local `.env` was excluded from Git, restricted to mode `0600`, read without
+- A local `.env` was excluded from Git, restricted to mode `0600`, set to the
+  user-confirmed Europe region, and read without
   exporting values into the process environment, and never printed. The signed
   Dream 3.36.0 APK established package `com.owletcare.sleep`, signer SHA-1, and
   the World/US and Europe Firebase Auth project identities. Androguard was used
   only for public application-configuration observations; its temporary output
   and generated log/database were not retained in the repository.
-- With the current Firebase v1 password endpoint and signed-app identity, the
-  redacted World/US probe returned `invalid_credentials`. The corresponding
-  Europe probe returned HTTP 401 with a non-JSON response. Neither attempt
-  reached KMS, and no Firebase token, UID, AuthKey, AV password, SDK key, full
-  email, password, or camera identifier was emitted.
+- With the current Firebase v1 password endpoint, the redacted World/US probe
+  returned `invalid_credentials`. The user then confirmed EMEA in the official
+  app UI. Europe returned HTTP 401 with a non-JSON response before password
+  validation using both the Dream and legacy Owlet Care Android identities.
+  Neither attempt reached KMS, and no Firebase token, UID, AuthKey, AV password,
+  SDK key, full email, password, or camera identifier was emitted.
 - **Acceptance gate: failed.** Real authentication and KMS lookup have not
   succeeded, so native camera connection and frame work must not begin. The
   next external action is to verify the same typed email/password in the
-  official Owlet app and confirm whether the account uses Apple/Google sign-in.
+  official EMEA app. If it succeeds, the clean-room client must determine which
+  additional public Firebase client metadata or attestation Europe requires,
+  without installing a CA or intercepting traffic.
 - `.venv/bin/ruff format --check .`, `.venv/bin/ruff check .`, and
   `.venv/bin/mypy custom_components scripts`: passed.
 - `scripts/validate_release.py`, `scripts/check_secrets.py`, repository JSON,
