@@ -1,24 +1,144 @@
 {
   "config": {
     "abort": {
-      "already_configured": "This Owlet Cam development entry is already configured.",
-      "development_disabled": "Development setup is disabled. Set OWLET_CAM_DEV_MODE=1 only in a development environment."
+      "already_configured": "This Owlet camera is already configured.",
+      "development_disabled": "Development setup is disabled. Set OWLET_CAM_DEV_MODE=1 only in a development environment.",
+      "external_not_available": "External bridge mode arrives in version 0.3.0. Embedded cloud validation is available now.",
+      "reauth_successful": "Owlet account authentication was updated successfully.",
+      "reconfigure_successful": "Owlet camera configuration was updated successfully.",
+      "wrong_camera": "The camera DSN does not match this configuration entry."
+    },
+    "error": {
+      "camera_not_found": "This camera was not found on the authenticated Owlet account. Check the DSN and account.",
+      "cannot_connect": "Could not connect to the Owlet service. Please try again.",
+      "invalid_auth": "The email or password is incorrect, or the account is unavailable.",
+      "invalid_dsn": "Enter a valid Owlet camera DSN beginning with the letter OCD.",
+      "invalid_dsn_zero": "The DSN must begin with the letter O, not the digit 0.",
+      "invalid_email": "Enter a valid email address.",
+      "invalid_name": "Enter a camera name.",
+      "rate_limited": "Owlet is temporarily rate limiting requests. Please wait and try again.",
+      "unsupported_region": "This Owlet region is not supported."
     },
     "step": {
       "user": {
-        "title": "Owlet Cam development setup",
-        "description": "This temporary setup creates a diagnostic entity and performs no Owlet networking.",
+        "title": "Choose a connection mode",
+        "description": "External bridge mode remains the production fallback. Embedded mode currently validates Owlet cloud access and camera credentials only.",
         "data": {
-          "mode": "Connection type"
+          "mode": "Connection mode"
+        }
+      },
+      "embedded": {
+        "title": "Embedded experimental cloud validation",
+        "description": "This validates Owlet authentication and camera KMS metadata. Native streaming is not started.",
+        "data": {
+          "camera_dsn": "Camera DSN",
+          "camera_name": "Camera name",
+          "email": "Owlet email",
+          "password": "Owlet password",
+          "region": "Region"
         },
         "data_description": {
-          "mode": "Only the isolated development lifecycle test is available in version 0.1.0."
+          "camera_dsn": "Use the printed camera DSN. It begins with the letter O, not the digit 0.",
+          "password": "Stored in Home Assistant config-entry data and never written to runtime files."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Owlet Cam",
+        "description": "Enter valid Owlet account credentials for this camera.",
+        "data": {
+          "email": "Owlet email",
+          "password": "Owlet password",
+          "region": "Region"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Owlet Cam",
+        "description": "Revalidate the account and existing camera DSN. To add another camera, create another entry.",
+        "data": {
+          "camera_dsn": "Camera DSN",
+          "camera_name": "Camera name",
+          "email": "Owlet email",
+          "password": "Owlet password",
+          "region": "Region"
         }
       }
     }
   },
+  "options": {
+    "step": {
+      "general": {
+        "title": "General",
+        "description": "Configure general update and future media behavior.",
+        "data": {
+          "debug_logging": "Debug logging",
+          "enable_audio": "Enable audio",
+          "idle_disconnect_timeout": "Idle disconnect timeout",
+          "keep_camera_session_warm": "Keep camera session warm",
+          "stream_quality": "Stream quality",
+          "update_interval": "Update interval"
+        },
+        "data_description": {
+          "idle_disconnect_timeout": "Seconds before a future idle embedded session disconnects.",
+          "update_interval": "Cloud status update interval in seconds."
+        }
+      },
+      "embedded": {
+        "title": "Embedded experimental",
+        "description": "These settings are stored now and take effect as native runtime milestones become available.",
+        "data": {
+          "experimental_local_sensors": "Enable experimental local sensors",
+          "no_frame_timeout": "No-frame timeout",
+          "prefer_direct_p2p": "Prefer direct P2P",
+          "reconnect_backoff": "Reconnect backoff",
+          "runtime_channel": "Runtime channel"
+        },
+        "data_description": {
+          "prefer_direct_p2p": "Observation only until testing proves that relay mode causes failures."
+        }
+      }
+    }
+  },
+  "selector": {
+    "mode": {
+      "options": {
+        "development": "Development lifecycle test",
+        "embedded": "Embedded experimental",
+        "external_bridge": "External bridge"
+      }
+    },
+    "region": {
+      "options": {
+        "europe": "Europe",
+        "world": "World / United States"
+      }
+    },
+    "runtime_channel": {
+      "options": {
+        "beta": "Beta",
+        "stable": "Stable"
+      }
+    },
+    "stream_quality": {
+      "options": {
+        "high": "High",
+        "low": "Low",
+        "medium": "Medium"
+      }
+    }
+  },
   "entity": {
+    "binary_sensor": {
+      "camera_credentials_available": {
+        "name": "Camera credentials available"
+      },
+      "cloud_reachable": {
+        "name": "Cloud reachable"
+      }
+    },
     "sensor": {
+      "authentication_expiry": {
+        "name": "Authentication expiry"
+      },
       "integration_status": {
         "name": "Integration status",
         "state": {

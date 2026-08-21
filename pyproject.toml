@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ha-owlet-cam"
-version = "0.1.0"
+version = "0.2.0"
 description = "Home Assistant custom integration for Owlet cameras"
 readme = "README.md"
 # This constrains the local/CI test toolchain, not HACS installation. The
@@ -20,7 +20,7 @@ classifiers = [
 
 [dependency-groups]
 dev = [
-  "homeassistant>=2024.5.0",
+  "homeassistant>=2024.11.0",
   "mypy>=1.17.0",
   "pytest>=8.4.0",
   "pytest-asyncio>=1.1.0",

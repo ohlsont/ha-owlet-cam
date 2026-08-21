@@ -1,12 +1,12 @@
 {
   "domain": "owlet_cam",
   "name": "Owlet Cam",
-  "version": "0.1.0",
-  "codeowners": ["@tomasohlson"],
+  "version": "0.2.0",
+  "codeowners": ["@ohlsont"],
   "config_flow": true,
-  "documentation": "https://github.com/tomasohlson/ha-owlet-cam",
-  "issue_tracker": "https://github.com/tomasohlson/ha-owlet-cam/issues",
+  "documentation": "https://github.com/ohlsont/ha-owlet-cam",
+  "issue_tracker": "https://github.com/ohlsont/ha-owlet-cam/issues",
   "integration_type": "device",
-  "iot_class": "local_polling",
+  "iot_class": "cloud_polling",
   "requirements": []
 }

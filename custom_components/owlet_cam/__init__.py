@@ -1,9 +1,25 @@
 """Owlet Cam integration lifecycle."""
 
+from datetime import timedelta
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import PLATFORMS
+from .api.cloud import OwletCloudClient
+from .api.models import OwletCameraData
+from .const import (
+    CONF_CAMERA_DSN,
+    CONF_CAMERA_NAME,
+    CONF_EMAIL,
+    CONF_MODE,
+    CONF_PASSWORD,
+    CONF_REGION,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
+    MODE_EMBEDDED,
+    PLATFORMS,
+)
 from .coordinator import OwletCamCoordinator
 from .data import OwletCamConfigEntry, OwletCamRuntimeData
 
@@ -13,10 +29,37 @@ async def async_setup_entry(
     entry: OwletCamConfigEntry,
 ) -> bool:
     """Set up Owlet Cam from a config entry."""
+    client = None
+    cameras: dict[str, OwletCameraData] = {}
+    if entry.data.get(CONF_MODE) == MODE_EMBEDDED:
+        dsn = entry.data[CONF_CAMERA_DSN]
+        client = OwletCloudClient(
+            async_get_clientsession(hass),
+            email=entry.data[CONF_EMAIL],
+            password=entry.data[CONF_PASSWORD],
+            region=entry.data[CONF_REGION],
+        )
+        coordinator = OwletCamCoordinator(
+            hass,
+            client=client,
+            camera_dsn=dsn,
+            update_interval=timedelta(
+                seconds=entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+            ),
+        )
+        await coordinator.async_config_entry_first_refresh()
+        cameras[dsn] = OwletCameraData(
+            camera_id=dsn,
+            name=entry.data[CONF_CAMERA_NAME],
+        )
+    else:
+        coordinator = OwletCamCoordinator(hass)
+
     entry.runtime_data = OwletCamRuntimeData(
-        client=None,
-        coordinator=OwletCamCoordinator(hass),
+        client=client,
+        coordinator=coordinator,
         runtime_manager=None,
+        cameras=cameras,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True

@@ -1,5 +1,5 @@
 {
   "name": "Owlet Cam",
-  "homeassistant": "2024.5.0",
+  "homeassistant": "2024.11.0",
   "persistent_directory": "userfiles"
 }

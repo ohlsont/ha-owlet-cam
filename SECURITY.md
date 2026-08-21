@@ -23,7 +23,9 @@ of the supported design.
 
 ## Deleting stored material
 
-Milestone 0 stores no proprietary material. Before the authenticated delete UI
+Milestone 1 stores account credentials only in Home Assistant config-entry
+storage and keeps Firebase and KMS material in process memory. It writes no
+proprietary material to `userfiles`. Before the authenticated delete UI
 exists, a user may stop/unload the integration and remove the contents of
 `custom_components/owlet_cam/userfiles/` using an existing Home Assistant file
 management method. Do not delete the integration directory while Home Assistant

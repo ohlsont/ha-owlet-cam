@@ -38,7 +38,7 @@ def main() -> int:
         raise SystemExit("manifest and pyproject versions differ")
     if hacs != {
         "name": "Owlet Cam",
-        "homeassistant": "2024.5.0",
+        "homeassistant": "2024.11.0",
         "persistent_directory": "userfiles",
     }:
         raise SystemExit("hacs.json persistence or compatibility policy changed")
