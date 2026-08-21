@@ -1,5 +1,6 @@
 """Tests for clean-room Owlet cloud authentication and KMS validation."""
 
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -23,6 +24,7 @@ from custom_components.owlet_cam.api.exceptions import (
     OwletUnsupportedRegionError,
 )
 from custom_components.owlet_cam.const import REGION_EUROPE, REGION_WORLD
+from scripts.probe_cloud import async_probe, safe_error_report
 
 EMAIL = "parent@example.invalid"
 PASSWORD = "fixture-account-password"  # noqa: S105 - sanitized fixture
@@ -299,6 +301,48 @@ def test_invalid_dsn_is_rejected(value: str, confused_zero: bool) -> None:
     with pytest.raises(OwletInvalidDSNError) as caught:
         normalize_camera_dsn(value)
     assert caught.value.confused_zero is confused_zero
+
+
+async def test_local_cloud_probe_reports_presence_without_secrets(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    client = _client(hass)
+    _mock_auth(aioclient_mock, client)
+    _mock_kms(aioclient_mock)
+
+    report = await async_probe(
+        async_get_clientsession(hass),
+        email=EMAIL,
+        password=PASSWORD,
+        region=REGION_EUROPE,
+        camera_dsn=DSN,
+    )
+
+    serialized = json.dumps(report)
+    assert report["ok"] is True
+    assert report["credentials_available"] is True
+    for secret in (
+        EMAIL,
+        PASSWORD,
+        DSN,
+        ID_TOKEN,
+        REFRESH_TOKEN,
+        UID,
+        AUTH_KEY,
+        AV_PASSWORD,
+    ):
+        assert secret not in serialized
+
+
+def test_local_cloud_probe_error_report_is_safe() -> None:
+    report = safe_error_report(OwletAuthenticationError("Authentication failed"))
+
+    assert report == {
+        "ok": False,
+        "error_code": "OwletAuthenticationError",
+        "message": "Authentication failed",
+    }
 
 
 async def test_unsupported_region_is_typed(hass: HomeAssistant) -> None:
