@@ -1,0 +1,40 @@
+"""Diagnostics redaction tests."""
+
+import json
+
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.owlet_cam.const import CONF_MODE, DOMAIN, MODE_DEVELOPMENT
+from custom_components.owlet_cam.diagnostics import async_get_config_entry_diagnostics
+
+
+async def test_diagnostics_redact_every_secret_fixture(hass: HomeAssistant) -> None:
+    """Configured secrets must not survive serialized diagnostics."""
+    secrets = {
+        "email": "parent@example.invalid",
+        "password": "fixture-" + "account-password",
+        "firebase_token": "fixture-" + "firebase-token",
+        "uid": "fixture-" + "camera-uid",
+        "auth_key": "fixture-" + "auth-key",
+        "av_password": "fixture-" + "av-password",
+        "sdk_key": "fixture-" + "sdk-key",
+        "bridge_token": "fixture-" + "bridge-token",
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Diagnostics",
+        data={CONF_MODE: MODE_DEVELOPMENT, **secrets},
+        options={"stream_path_token": "fixture-" + "stream-path"},
+        unique_id="diagnostics",
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+    serialized = json.dumps(diagnostics, sort_keys=True)
+
+    for secret in (*secrets.values(), "fixture-stream-path"):
+        assert secret not in serialized
+    assert "**REDACTED**" in serialized

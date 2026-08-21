@@ -1,0 +1,30 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This Owlet Cam development entry is already configured.",
+      "development_disabled": "Development setup is disabled. Set OWLET_CAM_DEV_MODE=1 only in a development environment."
+    },
+    "step": {
+      "user": {
+        "title": "Owlet Cam development setup",
+        "description": "This temporary setup creates a diagnostic entity and performs no Owlet networking.",
+        "data": {
+          "mode": "Connection type"
+        },
+        "data_description": {
+          "mode": "Only the isolated development lifecycle test is available in version 0.1.0."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "integration_status": {
+        "name": "Integration status",
+        "state": {
+          "ready": "Ready"
+        }
+      }
+    }
+  }
+}
