@@ -42,10 +42,12 @@ class OwletCameraNotFoundError(OwletCamError):
         self,
         message: str = "Camera is not available to this Owlet account",
         *,
+        reason: str = "camera_unavailable",
         http_status: int | None = None,
     ) -> None:
         """Create a camera lookup failure with safe HTTP status metadata."""
         super().__init__(message)
+        self.reason = reason
         self.http_status = http_status
 
 

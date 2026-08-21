@@ -33,13 +33,16 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ### Validation status
 
-- Local automated validation: 79 tests passed with 90.04% branch-aware coverage
+- Local automated validation: 85 tests passed with 90.29% branch-aware coverage
   on Home Assistant 2026.8.2; Ruff, mypy, secret and release checks pass.
 - A redacted real-account probe authenticated successfully against the
   user-confirmed EMEA Firebase project and reached the APK-verified regional
   KMS host. KMS returned HTTP 403 for the configured camera identifier, so no
   camera credentials were returned and the gate remains failed. Public
   GitHub/HACS installation and Yellow validation remain deferred/unperformed.
+- Confirmed the identifier comes from Dream device information and the same
+  account can view the camera. Raw and Bearer token formats plus APK-observed
+  generic request headers all produced the same redacted KMS 403 result.
 
 ## [0.1.0] - Unreleased
 

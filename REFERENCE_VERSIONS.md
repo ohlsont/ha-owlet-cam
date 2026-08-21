@@ -42,11 +42,15 @@ the Dream application's identity, while its constructed Firebase options
 confirm the separate `owletcare-prod` and `owletcare-prod-eu` Auth projects and
 their public application identifiers. A narrow URL-construction observation
 also established that the Europe environment inserts `.eu` into the camera KMS
-hostname. These public configuration facts selected the Dream identity,
-Firebase application-ID header, and region-specific KMS URL used by the
-clean-room client. No decompiled expression or control flow was copied. No user
-credential, camera credential, SDK key, or proprietary application file was
-copied into the repository.
+hostname. A second narrow inspection established that Dream passes its internal
+camera `dsn` unchanged to this URL with the raw, fresh Firebase token and only
+generic app/version user-agent and language headers; it does not add an App
+Check token or another KMS authorization value. These public configuration and
+protocol facts selected the Dream identity, Firebase application-ID header,
+region-specific KMS URL, and independently implemented request contract. No
+decompiled expression or control flow was copied. No user credential, camera
+credential, SDK key, or proprietary application file was copied into the
+repository.
 
 The local native feasibility probe used apkeep as an external acquisition tool,
 not as source code. Its ARM64 release binary had SHA-256

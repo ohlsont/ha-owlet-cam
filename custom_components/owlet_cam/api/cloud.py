@@ -30,6 +30,11 @@ _KMS_URLS: Final = {
 }
 _ANDROID_PACKAGE: Final = "com.owletcare.sleep"
 _ANDROID_CERT: Final = "2A3BC26DB0B8B0792DBE28E6FFDC2598F9B12B74"
+_ANDROID_APP_VERSION: Final = "3.36.0"
+_ANDROID_USER_AGENT: Final = (
+    f"Dream/{_ANDROID_APP_VERSION} (Home Assistant, Android compatible)"
+)
+_ACCEPT_LANGUAGE: Final = "en"
 _TOKEN_REFRESH_MARGIN: Final = timedelta(minutes=2)
 _DEFAULT_TIMEOUT: Final = 20.0
 _DSN_PATTERN: Final = re.compile(r"^OC[A-Z0-9]{7,30}$")
@@ -119,7 +124,7 @@ class OwletCloudClient:
         payload = await self._async_request_json(
             "GET",
             _KMS_URLS[self._region].format(dsn=normalized_dsn),
-            headers={"Authorization": token},
+            headers=self._kms_headers(token),
             operation="kms",
         )
 
@@ -229,7 +234,17 @@ class OwletCloudClient:
             "X-Android-Package": _ANDROID_PACKAGE,
             "X-Android-Cert": _ANDROID_CERT,
             "X-Firebase-GMPID": self._region_config.firebase_app_id,
-            "User-Agent": "OwletCare/Android",
+            "User-Agent": _ANDROID_USER_AGENT,
+            "Accept-Language": _ACCEPT_LANGUAGE,
+        }
+
+    @staticmethod
+    def _kms_headers(token: str) -> dict[str, str]:
+        """Return the non-secret app metadata plus the raw Firebase token."""
+        return {
+            "Authorization": token,
+            "User-Agent": _ANDROID_USER_AGENT,
+            "Accept-Language": _ACCEPT_LANGUAGE,
         }
 
     async def _async_request_json(
@@ -308,6 +323,7 @@ class OwletCloudClient:
             if status in {400, 403, 404}:
                 raise OwletCameraNotFoundError(
                     "Camera is not available to this Owlet account",
+                    reason=_kms_error_reason(payload, status),
                     http_status=status,
                 )
         raise OwletConnectionError("Owlet service request failed")
@@ -369,3 +385,32 @@ def _invalid_response_reason(response_text: str) -> str:
     if "unauthorized" in normalized:
         return "unauthorized_response"
     return "invalid_json"
+
+
+def _kms_error_reason(payload: dict[str, Any], status: int) -> str:
+    """Classify fixed KMS error phrases without returning response content."""
+    candidates = [
+        value
+        for key, value in payload.items()
+        if key.casefold() in {"code", "detail", "error", "message"}
+    ]
+    normalized = " ".join(value for value in candidates if isinstance(value, str))
+    normalized = normalized.casefold()
+    if "missing authentication token" in normalized:
+        return "kms_route_rejected"
+    if "invalid" in normalized and any(
+        marker in normalized for marker in ("dsn", "camera", "identifier")
+    ):
+        return "invalid_camera_identifier"
+    if "not found" in normalized:
+        return "camera_not_found"
+    if any(
+        marker in normalized
+        for marker in ("forbidden", "not authorized", "not authorised", "permission")
+    ):
+        return "camera_forbidden"
+    return {
+        400: "invalid_camera_request",
+        403: "camera_forbidden",
+        404: "camera_not_found",
+    }.get(status, "camera_unavailable")

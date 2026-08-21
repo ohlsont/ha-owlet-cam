@@ -119,8 +119,12 @@ async def test_successful_region_login_and_kms(
     assert auth_request[3]["X-Android-Package"] == "com.owletcare.sleep"
     assert auth_request[3]["X-Android-Cert"]
     assert auth_request[3]["X-Firebase-GMPID"] == client._region_config.firebase_app_id
+    assert auth_request[3]["User-Agent"].startswith("Dream/3.36.0")
+    assert auth_request[3]["Accept-Language"] == "en"
     kms_request = aioclient_mock.mock_calls[1]
     assert kms_request[3]["Authorization"] == ID_TOKEN
+    assert kms_request[3]["User-Agent"] == auth_request[3]["User-Agent"]
+    assert kms_request[3]["Accept-Language"] == "en"
 
 
 @pytest.mark.parametrize(
@@ -176,6 +180,7 @@ async def test_kms_http_error_mapping(
 
     if isinstance(caught.value, OwletCameraNotFoundError):
         assert caught.value.http_status == status
+        assert caught.value.reason
 
 
 async def test_auth_rate_limit_and_server_error(
@@ -260,6 +265,23 @@ def test_invalid_response_reason_does_not_expose_content(
     response_text: str, reason: str
 ) -> None:
     assert cloud._invalid_response_reason(response_text) == reason
+
+
+@pytest.mark.parametrize(
+    ("payload", "status", "reason"),
+    [
+        ({"message": "Missing Authentication Token"}, 403, "kms_route_rejected"),
+        ({"Message": "Missing Authentication Token"}, 403, "kms_route_rejected"),
+        ({"error": "Invalid DSN"}, 400, "invalid_camera_identifier"),
+        ({"detail": "Camera not found"}, 404, "camera_not_found"),
+        ({"message": "Not authorized"}, 403, "camera_forbidden"),
+        ({}, 403, "camera_forbidden"),
+    ],
+)
+def test_kms_error_reason_is_coarse_and_safe(
+    payload: dict[str, object], status: int, reason: str
+) -> None:
+    assert cloud._kms_error_reason(payload, status) == reason
 
 
 async def test_incomplete_success_responses_are_rejected(
