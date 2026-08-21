@@ -29,7 +29,7 @@ _ANDROID_PACKAGE: Final = "com.owletcare.owletcare"
 _ANDROID_CERT: Final = "2A3BC26DB0B8B0792DBE28E6FFDC2598F9B12B74"
 _TOKEN_REFRESH_MARGIN: Final = timedelta(minutes=2)
 _DEFAULT_TIMEOUT: Final = 20.0
-_DSN_PATTERN: Final = re.compile(r"^OCD[A-Z0-9]{6,29}$")
+_DSN_PATTERN: Final = re.compile(r"^OC[A-Z0-9]{7,30}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +64,7 @@ class _CameraCredentials:
 def normalize_camera_dsn(value: str) -> str:
     """Normalize and validate an Owlet camera DSN without correcting typos."""
     normalized = value.strip().upper()
-    if normalized.startswith("0CD"):
+    if normalized.startswith("0C"):
         raise OwletInvalidDSNError(confused_zero=True)
     if not _DSN_PATTERN.fullmatch(normalized):
         raise OwletInvalidDSNError()

@@ -101,8 +101,9 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting
 
-- A DSN begins with the letter `O` in `OCD`, not the digit `0`; the flow rejects
-  the common typo rather than silently changing it.
+- A camera identifier begins with the letters `OC`, including known `OCA…` and
+  `OCD…` forms. The first character is the letter `O`, not the digit `0`; the
+  flow rejects that typo rather than silently changing it.
 - Authentication errors can be corrected from the integration's reauthenticate
   action without creating a duplicate entry.
 - If HACS cannot find the repository, confirm it is public and added as an

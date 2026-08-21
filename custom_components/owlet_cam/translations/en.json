@@ -12,7 +12,7 @@
       "camera_not_found": "This camera was not found on the authenticated Owlet account. Check the DSN and account.",
       "cannot_connect": "Could not connect to the Owlet service. Please try again.",
       "invalid_auth": "The email or password is incorrect, or the account is unavailable.",
-      "invalid_dsn": "Enter a valid Owlet camera DSN beginning with the letter OCD.",
+      "invalid_dsn": "Enter a valid Owlet camera identifier beginning with the letters OC.",
       "invalid_dsn_zero": "The DSN must begin with the letter O, not the digit 0.",
       "invalid_email": "Enter a valid email address.",
       "invalid_name": "Enter a camera name.",

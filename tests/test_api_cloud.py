@@ -292,6 +292,7 @@ async def test_expired_token_refreshes_without_password_login(
     ("value", "confused_zero"),
     [
         ("0CD123456789", True),
+        ("0CA1234567890123", True),
         ("not-a-dsn", False),
         ("OCD12", False),
         ("", False),
@@ -301,6 +302,18 @@ def test_invalid_dsn_is_rejected(value: str, confused_zero: bool) -> None:
     with pytest.raises(OwletInvalidDSNError) as caught:
         normalize_camera_dsn(value)
     assert caught.value.confused_zero is confused_zero
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("OCD123456789", "OCD123456789"),
+        ("OCA1234567890123", "OCA1234567890123"),
+        ("  oca1234567890123  ", "OCA1234567890123"),
+    ],
+)
+def test_valid_camera_prefixes_are_normalized(value: str, expected: str) -> None:
+    assert normalize_camera_dsn(value) == expected
 
 
 async def test_local_cloud_probe_reports_presence_without_secrets(
