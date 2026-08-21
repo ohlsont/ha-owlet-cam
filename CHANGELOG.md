@@ -35,9 +35,10 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 - Local automated validation: 42 tests passed with 92.85% branch-aware coverage
   on Home Assistant 2026.8.2; Ruff and mypy pass.
-- Public GitHub/HACS installation and real European account validation on the
-  Yellow are explicitly deferred/unperformed. No cloud or KMS success is
-  claimed against a real account yet.
+- A redacted real-account probe was attempted locally. World/US authentication
+  returned invalid credentials and Europe returned HTTP 401; KMS was not
+  contacted. The real-account gate therefore remains failed. Public GitHub/HACS
+  installation and Yellow validation remain deferred/unperformed.
 
 ## [0.1.0] - Unreleased
 

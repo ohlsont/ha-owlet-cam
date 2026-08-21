@@ -26,12 +26,23 @@ ThroughTek shared object from another repository rather than using libraries
 from the user's Owlet application. Neither mechanism is used by this project.
 
 Milestone 1 additionally used Google's public Firebase Auth REST documentation
-to independently implement `accounts:signInWithPassword`, token expiry parsing,
-and refresh behavior. Firebase project/API identifiers and Android package/cert
-identifiers are application identity metadata, not Owlet account credentials or
-the prohibited Kalay SDK licence key. Actual Firebase, KMS, UID, AuthKey, and AV
-password values are never persisted outside Home Assistant's configured account
-credentials and the integration process's private memory.
+to independently implement password authentication, token expiry parsing, and
+refresh behavior using the documented
+`identitytoolkit.googleapis.com/v1/accounts:signInWithPassword` endpoint. No
+reference implementation was copied. Firebase project/API identifiers and
+Android package/cert identifiers are application identity metadata, not Owlet
+account credentials or the prohibited Kalay SDK licence key. Actual Firebase,
+KMS, UID, AuthKey, and AV password values are never persisted outside Home
+Assistant's configured account credentials and the integration process's
+private memory.
+
+The signed `com.owletcare.sleep` version 3.36.0 package supplied by the user was
+also inspected locally with Androguard. Its manifest and certificate establish
+the Android application identity, while its constructed Firebase options
+identify the separate `owletcare-prod` and `owletcare-prod-eu` Auth projects.
+Only those public configuration facts were recorded; no decompiled expression
+or control flow was copied. No user credential, camera credential, SDK key, or
+proprietary application file was copied into the repository.
 
 The local native feasibility probe used apkeep as an external acquisition tool,
 not as source code. Its ARM64 release binary had SHA-256

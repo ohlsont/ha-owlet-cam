@@ -14,3 +14,6 @@ __pycache__/
 custom_components/owlet_cam/userfiles/*
 !custom_components/owlet_cam/userfiles/.gitkeep
 !custom_components/owlet_cam/userfiles/README.md
+.env
+.env.*
+!.env.example

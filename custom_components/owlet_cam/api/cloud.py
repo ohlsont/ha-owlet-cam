@@ -25,7 +25,7 @@ _FIREBASE_SIGN_IN_URL: Final = (
 )
 _FIREBASE_REFRESH_URL: Final = "https://securetoken.googleapis.com/v1/token"
 _KMS_URL: Final = "https://camera-kms.owletdata.com/kms/{dsn}"
-_ANDROID_PACKAGE: Final = "com.owletcare.owletcare"
+_ANDROID_PACKAGE: Final = "com.owletcare.sleep"
 _ANDROID_CERT: Final = "2A3BC26DB0B8B0792DBE28E6FFDC2598F9B12B74"
 _TOKEN_REFRESH_MARGIN: Final = timedelta(minutes=2)
 _DEFAULT_TIMEOUT: Final = 20.0
@@ -242,23 +242,35 @@ class OwletCloudClient:
                     raise OwletRateLimitError("Owlet service rate limit reached")
                 if status >= 500:
                     raise OwletConnectionError(
-                        "Owlet service is temporarily unavailable"
+                        "Owlet service is temporarily unavailable",
+                        reason="server_error",
+                        http_status=status,
                     )
                 try:
                     payload = await response.json(content_type=None)
                 except (ValueError, aiohttp.ClientError) as err:
                     raise OwletConnectionError(
-                        "Owlet service returned invalid data"
+                        "Owlet service returned invalid data",
+                        reason="invalid_json",
+                        http_status=status,
                     ) from err
                 if not isinstance(payload, dict):
-                    raise OwletConnectionError("Owlet service returned invalid data")
+                    raise OwletConnectionError(
+                        "Owlet service returned invalid data",
+                        reason="invalid_shape",
+                        http_status=status,
+                    )
                 if status >= 400:
                     self._raise_for_status(status, payload, operation)
                 return payload
         except TimeoutError as err:
-            raise OwletConnectionError("Owlet service request timed out") from err
+            raise OwletConnectionError(
+                "Owlet service request timed out", reason="timeout"
+            ) from err
         except aiohttp.ClientError as err:
-            raise OwletConnectionError("Owlet service connection failed") from err
+            raise OwletConnectionError(
+                "Owlet service connection failed", reason="client_error"
+            ) from err
 
     @staticmethod
     def _raise_for_status(status: int, payload: dict[str, Any], operation: str) -> None:
@@ -273,12 +285,18 @@ class OwletCloudClient:
                 "USER_DISABLED",
                 "USER_NOT_FOUND",
             }:
-                raise OwletAuthenticationError("Owlet account authentication failed")
+                reason = {
+                    "TOKEN_EXPIRED": "session_expired",
+                    "USER_DISABLED": "user_disabled",
+                }.get(code, "invalid_credentials")
+                raise OwletAuthenticationError(reason=reason)
             if status in {401, 403}:
-                raise OwletAuthenticationError("Owlet account authentication failed")
+                raise OwletAuthenticationError(reason="client_rejected")
         elif operation == "kms":
             if status == 401:
-                raise OwletAuthenticationError("Owlet account session is invalid")
+                raise OwletAuthenticationError(
+                    "Owlet account session is invalid", reason="session_invalid"
+                )
             if status in {400, 403, 404}:
                 raise OwletCameraNotFoundError(
                     "Camera is not available to this Owlet account"

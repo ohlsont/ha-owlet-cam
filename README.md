@@ -21,10 +21,11 @@ attributes, diagnostics, logs, or frontend errors. Camera connection and media
 are not implemented or claimed in this milestone.
 
 External bridge mode is visible as the planned production fallback but is
-explicitly unavailable until Milestone 2. No camera model or real account has
-been tested yet. The user has deferred publishing the GitHub/HACS repository
-until core functionality is further along, so Yellow real-account validation is
-still unperformed.
+explicitly unavailable until Milestone 2. A redacted real-account probe has
+been attempted locally, but authentication did not succeed and KMS was not
+contacted; no camera model has been tested. The user has deferred publishing
+the GitHub/HACS repository until core functionality is further along, so Yellow
+real-account validation is still unperformed.
 
 On the separate local feasibility branch, a validly signed Owlet 3.36.0 ARM64
 bundle obtained with apkeep has passed safe extraction, ELF, required-symbol,
@@ -88,8 +89,9 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 
 - No camera entity, bridge connection, native camera connection, snapshot, or
   stream.
-- Cloud/KMS behavior has comprehensive sanitized fixture coverage but has not
-  yet passed the real European account gate on the Yellow.
+- Cloud/KMS behavior has comprehensive sanitized fixture coverage, but the
+  local real-account attempt failed at authentication and the Yellow gate has
+  not passed.
 - No real Home Assistant Yellow or HACS installation evidence yet.
 - The native libraries require Bionic and cannot be loaded by glibc. The local
   minimal Bionic probe passed, but it has not run inside Home Assistant Core on
@@ -106,6 +108,10 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   flow rejects that typo rather than silently changing it.
 - Authentication errors can be corrected from the integration's reauthenticate
   action without creating a duplicate entry.
+- The cloud probe requires an Owlet email/password login. If the account was
+  created with Apple or Google sign-in, first verify that a typed Owlet password
+  works in the official app; an active app session alone is not evidence that
+  Firebase password authentication is available.
 - If HACS cannot find the repository, confirm it is public and added as an
   Integration custom repository.
 - Report warnings or lifecycle failures with redacted diagnostics. Never attach

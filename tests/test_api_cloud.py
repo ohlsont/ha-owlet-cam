@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import aiohttp
 import pytest
@@ -24,7 +25,13 @@ from custom_components.owlet_cam.api.exceptions import (
     OwletUnsupportedRegionError,
 )
 from custom_components.owlet_cam.const import REGION_EUROPE, REGION_WORLD
-from scripts.probe_cloud import async_probe, safe_error_report
+from scripts.probe_cloud import (
+    ProbeConfigurationError,
+    async_probe,
+    load_probe_env,
+    normalize_probe_region,
+    safe_error_report,
+)
 
 EMAIL = "parent@example.invalid"
 PASSWORD = "fixture-account-password"  # noqa: S105 - sanitized fixture
@@ -108,7 +115,7 @@ async def test_successful_region_login_and_kms(
     assert metadata.av_password_available
     assert metadata.token_expiry > datetime.now(UTC)
     auth_request = aioclient_mock.mock_calls[0]
-    assert auth_request[3]["X-Android-Package"] == ("com.owletcare.owletcare")
+    assert auth_request[3]["X-Android-Package"] == "com.owletcare.sleep"
     assert auth_request[3]["X-Android-Cert"]
     kms_request = aioclient_mock.mock_calls[1]
     assert kms_request[3]["Authorization"] == ID_TOKEN
@@ -349,13 +356,73 @@ async def test_local_cloud_probe_reports_presence_without_secrets(
 
 
 def test_local_cloud_probe_error_report_is_safe() -> None:
-    report = safe_error_report(OwletAuthenticationError("Authentication failed"))
+    report = safe_error_report(
+        OwletAuthenticationError("Authentication failed", reason="client_rejected")
+    )
 
     assert report == {
         "ok": False,
         "error_code": "OwletAuthenticationError",
         "message": "Authentication failed",
+        "reason": "client_rejected",
     }
+
+    connection_report = safe_error_report(
+        OwletConnectionError("Invalid response", reason="invalid_json", http_status=403)
+    )
+    assert connection_report == {
+        "ok": False,
+        "error_code": "OwletConnectionError",
+        "message": "Invalid response",
+        "reason": "invalid_json",
+        "http_status": 403,
+    }
+
+
+def test_local_cloud_probe_reads_private_env_without_exporting(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / ".env"
+    source.write_text(
+        "\n".join(
+            (
+                "OWLET_REGION=US",
+                f"OWLET_EMAIL={EMAIL}",
+                f"OWLET_PASSWORD='{PASSWORD}'",
+                f'OWLET_IDENTIFIER="{DSN}"',
+            )
+        )
+    )
+    source.chmod(0o600)
+
+    values = load_probe_env(source)
+
+    assert values == {
+        "OWLET_REGION": "US",
+        "OWLET_EMAIL": EMAIL,
+        "OWLET_PASSWORD": PASSWORD,
+        "OWLET_IDENTIFIER": DSN,
+    }
+    assert normalize_probe_region(values["OWLET_REGION"]) == REGION_WORLD
+
+
+def test_local_cloud_probe_rejects_permissive_env_mode(tmp_path: Path) -> None:
+    source = tmp_path / ".env"
+    source.write_text(f"OWLET_PASSWORD={PASSWORD}\n")
+    source.chmod(0o644)
+
+    with pytest.raises(ProbeConfigurationError, match="mode 0600") as caught:
+        load_probe_env(source)
+
+    assert PASSWORD not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("US", REGION_WORLD), ("world", REGION_WORLD), ("EU", REGION_EUROPE)],
+)
+def test_local_cloud_probe_region_aliases(value: str, expected: str) -> None:
+    assert normalize_probe_region(value) == expected
 
 
 async def test_unsupported_region_is_typed(hass: HomeAssistant) -> None:
