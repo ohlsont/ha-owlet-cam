@@ -83,12 +83,13 @@ def _mock_auth(
 
 def _mock_kms(
     aioclient_mock: AiohttpClientMocker,
+    client: OwletCloudClient,
     *,
     status: int = 200,
     response: object = KMS_RESPONSE,
 ) -> None:
     aioclient_mock.get(
-        cloud._KMS_URL.format(dsn=DSN),
+        cloud._KMS_URLS[client.region].format(dsn=DSN),
         status=status,
         json=response,
     )
@@ -103,7 +104,7 @@ async def test_successful_region_login_and_kms(
     """European and world projects return only non-secret metadata."""
     client = _client(hass, region)
     _mock_auth(aioclient_mock, client)
-    _mock_kms(aioclient_mock)
+    _mock_kms(aioclient_mock, client)
 
     metadata = await client.async_validate_camera(f"  {DSN.lower()}  ")
 
@@ -115,8 +116,9 @@ async def test_successful_region_login_and_kms(
     assert metadata.av_password_available
     assert metadata.token_expiry > datetime.now(UTC)
     auth_request = aioclient_mock.mock_calls[0]
-    assert auth_request[3]["X-Android-Package"] == "com.owletcare.owletcare"
+    assert auth_request[3]["X-Android-Package"] == "com.owletcare.sleep"
     assert auth_request[3]["X-Android-Cert"]
+    assert auth_request[3]["X-Firebase-GMPID"] == client._region_config.firebase_app_id
     kms_request = aioclient_mock.mock_calls[1]
     assert kms_request[3]["Authorization"] == ID_TOKEN
 
@@ -167,10 +169,13 @@ async def test_kms_http_error_mapping(
 ) -> None:
     client = _client(hass)
     _mock_auth(aioclient_mock, client)
-    _mock_kms(aioclient_mock, status=status, response={"error": "safe"})
+    _mock_kms(aioclient_mock, client, status=status, response={"error": "safe"})
 
-    with pytest.raises(exception_type):
+    with pytest.raises(exception_type) as caught:
         await client.async_validate_camera(DSN)
+
+    if isinstance(caught.value, OwletCameraNotFoundError):
+        assert caught.value.http_status == status
 
 
 async def test_auth_rate_limit_and_server_error(
@@ -226,6 +231,37 @@ async def test_client_connection_error(
         await client.async_validate_camera(DSN)
 
 
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (aiohttp.ServerDisconnectedError(), "server_disconnected"),
+        (aiohttp.ClientConnectionError(), "client_error"),
+    ],
+)
+def test_client_error_reason_is_coarse_and_safe(
+    error: aiohttp.ClientError, reason: str
+) -> None:
+    assert cloud._client_error_reason(error) == reason
+
+
+@pytest.mark.parametrize(
+    ("response_text", "reason"),
+    [
+        ("", "empty_response"),
+        ("  <html>blocked</html>", "html_response"),
+        ("Firebase App Check token rejected", "app_check_rejected"),
+        ("Requests from this Android client are blocked", "android_client_blocked"),
+        ("API key not valid", "api_key_rejected"),
+        ("Unauthorized", "unauthorized_response"),
+        ("not-json", "invalid_json"),
+    ],
+)
+def test_invalid_response_reason_does_not_expose_content(
+    response_text: str, reason: str
+) -> None:
+    assert cloud._invalid_response_reason(response_text) == reason
+
+
 async def test_incomplete_success_responses_are_rejected(
     hass: HomeAssistant,
     aioclient_mock: AiohttpClientMocker,
@@ -237,7 +273,7 @@ async def test_incomplete_success_responses_are_rejected(
 
     kms_client = _client(hass)
     _mock_auth(aioclient_mock, kms_client)
-    _mock_kms(aioclient_mock, response={"unexpected": True})
+    _mock_kms(aioclient_mock, kms_client, response={"unexpected": True})
     with pytest.raises(OwletConnectionError):
         await kms_client.async_validate_camera(DSN)
 
@@ -248,7 +284,7 @@ async def test_partial_kms_metadata_is_presence_only(
 ) -> None:
     client = _client(hass)
     _mock_auth(aioclient_mock, client)
-    _mock_kms(aioclient_mock, response={"tutkid": UID})
+    _mock_kms(aioclient_mock, client, response={"tutkid": UID})
 
     metadata = await client.async_validate_camera(DSN)
 
@@ -264,7 +300,7 @@ async def test_expired_token_refreshes_without_password_login(
 ) -> None:
     client = _client(hass)
     _mock_auth(aioclient_mock, client)
-    _mock_kms(aioclient_mock)
+    _mock_kms(aioclient_mock, client)
     await client.async_validate_camera(DSN)
     client._token_expiry = datetime.now(UTC) - timedelta(seconds=1)
 
@@ -278,7 +314,7 @@ async def test_expired_token_refreshes_without_password_login(
             "user_id": "fixture-account-id",
         },
     )
-    _mock_kms(aioclient_mock)
+    _mock_kms(aioclient_mock, client)
 
     metadata = await client.async_validate_camera(DSN)
 
@@ -329,7 +365,7 @@ async def test_local_cloud_probe_reports_presence_without_secrets(
 ) -> None:
     client = _client(hass)
     _mock_auth(aioclient_mock, client)
-    _mock_kms(aioclient_mock)
+    _mock_kms(aioclient_mock, client)
 
     report = await async_probe(
         async_get_clientsession(hass),

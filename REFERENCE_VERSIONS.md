@@ -39,15 +39,14 @@ private memory.
 The signed `com.owletcare.sleep` version 3.36.0 package supplied by the user was
 also inspected locally with Androguard. Its manifest and certificate establish
 the Dream application's identity, while its constructed Firebase options
-confirm the separate `owletcare-prod` and `owletcare-prod-eu` Auth projects.
-The clean-room cloud probe retains the legacy `com.owletcare.owletcare`
-identity observed independently in the current bridge reference because the
-user's EMEA account uses that Owlet Care login family; the Dream package is
-being used for user-supplied native libraries, not as proof that the account
-was created by that client. Only public configuration facts were recorded; no
-decompiled expression or control flow was copied. No user credential, camera
-credential, SDK key, or proprietary application file was copied into the
-repository.
+confirm the separate `owletcare-prod` and `owletcare-prod-eu` Auth projects and
+their public application identifiers. A narrow URL-construction observation
+also established that the Europe environment inserts `.eu` into the camera KMS
+hostname. These public configuration facts selected the Dream identity,
+Firebase application-ID header, and region-specific KMS URL used by the
+clean-room client. No decompiled expression or control flow was copied. No user
+credential, camera credential, SDK key, or proprietary application file was
+copied into the repository.
 
 The local native feasibility probe used apkeep as an external acquisition tool,
 not as source code. Its ARM64 release binary had SHA-256

@@ -6,9 +6,9 @@ or real-system evidence.
 | Milestone | Commit | Integration version | Home Assistant version | Home Assistant OS version | Architecture | Camera model | Camera firmware | Automated tests | Yellow test | Real camera test | Result | Evidence | Unperformed tests | Known issues |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 — HACS scaffold and lifecycle | `67fae5f` | 0.1.0 | 2026.8.2 current; 2024.5.0 minimum at that milestone | HAOS 18.2 identified through authenticated read-only HA-MCP health evidence | AArch64 Home Assistant Yellow identified; integration not installed | None | None | **Passed locally:** original 6-test lifecycle suite; later Milestone 1 suite continues to cover lifecycle | Unperformed | Not applicable | **Automated gate passed; public HACS installation deferred by user** | Local commands and read-only system-health evidence on 2026-08-21 | HACS Action, Hassfest in GitHub context, and the ten physical install/lifecycle/log checks | Public repository intentionally deferred until core functionality works |
-| 1 — Cloud authentication and KMS | `probe/local-video` working tree | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 target identified; integration not installed | AArch64 Yellow target; tests executed on arm64 macOS | None | None | **Passed locally:** 70 tests at 90.13% branch-aware coverage; Ruff, mypy, secret and release checks passed | Unperformed | Unperformed | **Real-account gate failed at authentication; KMS was not contacted** | The user confirmed EMEA in the official app UI. A redacted World/US request returned `invalid_credentials`; Europe returned HTTP 401 before password validation with both Dream and legacy Owlet Care client identities | KMS lookup, diagnostics/log search, wrong-password correction on Yellow, camera connection and all media tests | Verify successful typed email/password login in the official EMEA app; then investigate the additional Firebase client metadata or attestation required by the Europe project without using traffic interception |
+| 1 — Cloud authentication and KMS | `probe/local-video` working tree | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 target identified; integration not installed | AArch64 Yellow target; tests executed on arm64 macOS | None | None | **Passed locally:** 79 tests at 90.04% branch-aware coverage; Ruff, mypy, secret and release checks passed | Unperformed | Unperformed | **EMEA authentication passed locally; KMS gate failed with HTTP 403** | The user confirmed typed EMEA Dream login. The clean-room probe authenticated with the signed Dream app identity and reached `camera-kms.eu.owletdata.com`; no camera credentials were returned | Successful KMS lookup, diagnostics/log search, wrong-password correction on Yellow, camera connection and all media tests | Confirm whether the configured camera identifier came from Dream's device information or only the physical label, and that this exact account can view the camera |
 | 2 — External bridge | — | — | — | — | — | — | — | Unperformed | Unperformed | Unperformed | Not started | — | All | Blocked by Milestone 0 gate |
-| 3–8 — Embedded runtime through stable release | `probe/local-video` working tree | 0.2.0 base; no embedded release | Not applicable to local spike | Not applicable to local spike | ARM64 macOS host; Linux/ARM64 Docker target | None supplied | None supplied | **Partial feasibility evidence:** 17 focused archive/ELF tests; full suite 70 passed at 90.13% coverage; Ruff, mypy, release and secret checks passed | Unperformed | Unperformed | **Local extraction and Bionic load sub-gates passed; no embedded milestone gate passed** | Local commands on 2026-08-21; exact redacted results below | KMS handoff, camera connection, frames, FFprobe, in-Core Yellow runtime/lifecycle | User explicitly prioritized proving real local video before Home Assistant installation; previous stable work remains on `build/milestone-1` |
+| 3–8 — Embedded runtime through stable release | `probe/local-video` working tree | 0.2.0 base; no embedded release | Not applicable to local spike | Not applicable to local spike | ARM64 macOS host; Linux/ARM64 Docker target | None supplied | None supplied | **Partial feasibility evidence:** 17 focused archive/ELF tests; full suite 79 passed at 90.04% coverage; Ruff, mypy, release and secret checks passed | Unperformed | Unperformed | **Local extraction and Bionic load sub-gates passed; no embedded milestone gate passed** | Local commands on 2026-08-21; exact redacted results below | Successful KMS handoff, camera connection, frames, FFprobe, in-Core Yellow runtime/lifecycle | User explicitly prioritized proving real local video before Home Assistant installation; previous stable work remains on `build/milestone-1` |
 
 ## Milestone 0 Yellow validation fields
 
@@ -42,8 +42,8 @@ or stream claim is made by this report.
   and no implementation source was copied.
 - Clean-room APK safety and ELF inspection prerequisites were implemented on the
   separate `probe/local-video` branch. Current focused validation: `17 passed`.
-  Full validation: Ruff passed, mypy passed for 31 source files, `70 passed` with
-  90.13% branch-aware coverage, secret scan passed for 72 release-source files,
+  Full validation: Ruff passed, mypy passed for 31 source files, `79 passed` with
+  90.04% branch-aware coverage, secret scan passed for 72 release-source files,
   and release metadata remained valid for 0.2.0 while correctly excluding the
   Git-ignored persistent runtime directory.
 - apkeep 1.0.0 for ARM64 was downloaded from EFF's GitHub release. Its SHA-256
@@ -104,18 +104,19 @@ or stream claim is made by this report.
   the World/US and Europe Firebase Auth project identities. Androguard was used
   only for public application-configuration observations; its temporary output
   and generated log/database were not retained in the repository.
-- With the current Firebase v1 password endpoint, the redacted World/US probe
-  returned `invalid_credentials`. The user then confirmed EMEA in the official
-  app UI. Europe returned HTTP 401 with a non-JSON response before password
-  validation using both the Dream and legacy Owlet Care Android identities.
-  Neither attempt reached KMS, and no Firebase token, UID, AuthKey, AV password,
-  SDK key, full email, password, or camera identifier was emitted.
-- **Acceptance gate: failed.** Real authentication and KMS lookup have not
-  succeeded, so native camera connection and frame work must not begin. The
-  next external action is to verify the same typed email/password in the
-  official EMEA app. If it succeeds, the clean-room client must determine which
-  additional public Firebase client metadata or attestation Europe requires,
-  without installing a CA or intercepting traffic.
+- The user confirmed that the same typed credentials successfully log into the
+  Dream iPhone app with EMEA selected. The clean-room probe then used the signed
+  Dream Android identity, public EMEA Firebase application ID, and Firebase v1
+  password endpoint. Authentication succeeded without exposing the returned
+  token. Static APK inspection established the `.eu` KMS hostname suffix; the
+  corrected request reached that host and returned HTTP 403 for the configured
+  camera identifier. No UID, AuthKey, AV password, SDK key, full email,
+  password, token, or camera identifier was emitted.
+- **Acceptance gate: failed at KMS.** Real EMEA authentication is now proven
+  locally, but camera metadata lookup did not succeed. Native camera connection
+  and frame work must not begin. The next external action is to confirm whether
+  the configured identifier came from Dream's device-information screen or
+  only the physical camera label, and that this exact account can view it.
 - `.venv/bin/ruff format --check .`, `.venv/bin/ruff check .`, and
   `.venv/bin/mypy custom_components scripts`: passed.
 - `scripts/validate_release.py`, `scripts/check_secrets.py`, repository JSON,

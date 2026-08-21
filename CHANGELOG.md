@@ -33,12 +33,13 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ### Validation status
 
-- Local automated validation: 42 tests passed with 92.85% branch-aware coverage
-  on Home Assistant 2026.8.2; Ruff and mypy pass.
-- A redacted real-account probe was attempted locally. World/US authentication
-  returned invalid credentials and Europe returned HTTP 401; KMS was not
-  contacted. The real-account gate therefore remains failed. Public GitHub/HACS
-  installation and Yellow validation remain deferred/unperformed.
+- Local automated validation: 79 tests passed with 90.04% branch-aware coverage
+  on Home Assistant 2026.8.2; Ruff, mypy, secret and release checks pass.
+- A redacted real-account probe authenticated successfully against the
+  user-confirmed EMEA Firebase project and reached the APK-verified regional
+  KMS host. KMS returned HTTP 403 for the configured camera identifier, so no
+  camera credentials were returned and the gate remains failed. Public
+  GitHub/HACS installation and Yellow validation remain deferred/unperformed.
 
 ## [0.1.0] - Unreleased
 

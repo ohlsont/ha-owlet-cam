@@ -24,8 +24,11 @@ _FIREBASE_SIGN_IN_URL: Final = (
     "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"
 )
 _FIREBASE_REFRESH_URL: Final = "https://securetoken.googleapis.com/v1/token"
-_KMS_URL: Final = "https://camera-kms.owletdata.com/kms/{dsn}"
-_ANDROID_PACKAGE: Final = "com.owletcare.owletcare"
+_KMS_URLS: Final = {
+    REGION_EUROPE: "https://camera-kms.eu.owletdata.com/kms/{dsn}",
+    REGION_WORLD: "https://camera-kms.owletdata.com/kms/{dsn}",
+}
+_ANDROID_PACKAGE: Final = "com.owletcare.sleep"
 _ANDROID_CERT: Final = "2A3BC26DB0B8B0792DBE28E6FFDC2598F9B12B74"
 _TOKEN_REFRESH_MARGIN: Final = timedelta(minutes=2)
 _DEFAULT_TIMEOUT: Final = 20.0
@@ -37,6 +40,7 @@ class _RegionConfig:
     """Public application identity for one Owlet Firebase project."""
 
     firebase_api_key: str
+    firebase_app_id: str
 
 
 # Firebase web API keys identify a Firebase project; Google documents them as API
@@ -44,10 +48,12 @@ class _RegionConfig:
 # so the repository secret scanner continues to reject any contiguous Google key.
 _REGION_CONFIGS: Final = {
     REGION_EUROPE: _RegionConfig(
-        firebase_api_key="".join(("AIza", "SyDm6EhV70wudwN3iOSq3vTjtsdGjdFLuuM"))
+        firebase_api_key="".join(("AIza", "SyDm6EhV70wudwN3iOSq3vTjtsdGjdFLuuM")),
+        firebase_app_id="1:395737756031:android:f1145b652faa5f4a",
     ),
     REGION_WORLD: _RegionConfig(
-        firebase_api_key="".join(("AIza", "SyCsDZ8kWxQuLJAMVnmEhEkayH1TSxKXfGA"))
+        firebase_api_key="".join(("AIza", "SyCsDZ8kWxQuLJAMVnmEhEkayH1TSxKXfGA")),
+        firebase_app_id="1:561089101102:android:7703b1c03673b7a486cebf",
     ),
 }
 
@@ -112,7 +118,7 @@ class OwletCloudClient:
         token = await self._async_ensure_token()
         payload = await self._async_request_json(
             "GET",
-            _KMS_URL.format(dsn=normalized_dsn),
+            _KMS_URLS[self._region].format(dsn=normalized_dsn),
             headers={"Authorization": token},
             operation="kms",
         )
@@ -222,6 +228,7 @@ class OwletCloudClient:
         return {
             "X-Android-Package": _ANDROID_PACKAGE,
             "X-Android-Cert": _ANDROID_CERT,
+            "X-Firebase-GMPID": self._region_config.firebase_app_id,
             "User-Agent": "OwletCare/Android",
         }
 
@@ -249,9 +256,10 @@ class OwletCloudClient:
                 try:
                     payload = await response.json(content_type=None)
                 except (ValueError, aiohttp.ClientError) as err:
+                    response_text = await response.text(errors="replace")
                     raise OwletConnectionError(
                         "Owlet service returned invalid data",
-                        reason="invalid_json",
+                        reason=_invalid_response_reason(response_text),
                         http_status=status,
                     ) from err
                 if not isinstance(payload, dict):
@@ -269,7 +277,7 @@ class OwletCloudClient:
             ) from err
         except aiohttp.ClientError as err:
             raise OwletConnectionError(
-                "Owlet service connection failed", reason="client_error"
+                "Owlet service connection failed", reason=_client_error_reason(err)
             ) from err
 
     @staticmethod
@@ -299,7 +307,8 @@ class OwletCloudClient:
                 )
             if status in {400, 403, 404}:
                 raise OwletCameraNotFoundError(
-                    "Camera is not available to this Owlet account"
+                    "Camera is not available to this Owlet account",
+                    http_status=status,
                 )
         raise OwletConnectionError("Owlet service request failed")
 
@@ -328,3 +337,35 @@ def _firebase_error_code(payload: dict[str, Any]) -> str:
     if not isinstance(message, str):
         return ""
     return message.split(":", maxsplit=1)[0].strip().upper()
+
+
+def _client_error_reason(error: aiohttp.ClientError) -> str:
+    """Reduce aiohttp failures to non-sensitive diagnostic categories."""
+    if isinstance(error, aiohttp.ClientConnectorCertificateError):
+        return "tls_error"
+    if isinstance(error, aiohttp.ClientConnectorDNSError):
+        return "dns_error"
+    if isinstance(error, aiohttp.ServerDisconnectedError):
+        return "server_disconnected"
+    if isinstance(error, aiohttp.ClientConnectorError):
+        return "connect_error"
+    return "client_error"
+
+
+def _invalid_response_reason(response_text: str) -> str:
+    """Classify a non-JSON response without retaining or exposing its content."""
+    stripped = response_text.lstrip()
+    if not stripped:
+        return "empty_response"
+    if stripped.startswith("<"):
+        return "html_response"
+    normalized = stripped.casefold()
+    if "app check" in normalized or "appcheck" in normalized:
+        return "app_check_rejected"
+    if "android client" in normalized and "block" in normalized:
+        return "android_client_blocked"
+    if "api key" in normalized:
+        return "api_key_rejected"
+    if "unauthorized" in normalized:
+        return "unauthorized_response"
+    return "invalid_json"

@@ -38,6 +38,16 @@ class OwletConnectionError(OwletCamError):
 class OwletCameraNotFoundError(OwletCamError):
     """The requested camera is not available to the authenticated account."""
 
+    def __init__(
+        self,
+        message: str = "Camera is not available to this Owlet account",
+        *,
+        http_status: int | None = None,
+    ) -> None:
+        """Create a camera lookup failure with safe HTTP status metadata."""
+        super().__init__(message)
+        self.http_status = http_status
+
 
 class OwletRateLimitError(OwletCamError):
     """The Owlet service rejected the request due to rate limiting."""

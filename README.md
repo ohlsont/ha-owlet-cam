@@ -22,10 +22,11 @@ are not implemented or claimed in this milestone.
 
 External bridge mode is visible as the planned production fallback but is
 explicitly unavailable until Milestone 2. A redacted real-account probe has
-been attempted locally, but authentication did not succeed and KMS was not
-contacted; no camera model has been tested. The user has deferred publishing
-the GitHub/HACS repository until core functionality is further along, so Yellow
-real-account validation is still unperformed.
+authenticated successfully against the user-confirmed EMEA project. The
+region-specific KMS request then returned HTTP 403 for the configured camera
+identifier, so no camera credentials were returned and no camera model has been
+tested. The user has deferred publishing the GitHub/HACS repository until core
+functionality is further along, so Yellow validation is still unperformed.
 
 On the separate local feasibility branch, a validly signed Owlet 3.36.0 ARM64
 bundle obtained with apkeep has passed safe extraction, ELF, required-symbol,
@@ -89,9 +90,9 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 
 - No camera entity, bridge connection, native camera connection, snapshot, or
   stream.
-- Cloud/KMS behavior has comprehensive sanitized fixture coverage, but the
-  local real-account attempt failed at authentication and the Yellow gate has
-  not passed.
+- Cloud/KMS behavior has comprehensive sanitized fixture coverage. Local EMEA
+  authentication succeeded, but KMS returned HTTP 403 for the configured
+  camera identifier and the Yellow gate has not passed.
 - No real Home Assistant Yellow or HACS installation evidence yet.
 - The native libraries require Bionic and cannot be loaded by glibc. The local
   minimal Bionic probe passed, but it has not run inside Home Assistant Core on
