@@ -4,11 +4,21 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INTEGRATION = ROOT / "custom_components" / "owlet_cam"
 PROHIBITED_SUFFIXES = {".apk", ".apkm", ".xapk", ".so"}
+
+
+def release_source_files() -> list[Path]:
+    """Return tracked and untracked release sources, excluding ignored runtime data."""
+    output = subprocess.check_output(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        cwd=ROOT,
+    )
+    return [ROOT / item.decode() for item in output.split(b"\0") if item]
 
 
 def main() -> int:
@@ -45,11 +55,8 @@ def main() -> int:
 
     prohibited = [
         path.relative_to(ROOT)
-        for path in ROOT.rglob("*")
-        if path.is_file()
-        and ".git" not in path.parts
-        and ".venv" not in path.parts
-        and path.suffix.lower() in PROHIBITED_SUFFIXES
+        for path in release_source_files()
+        if path.is_file() and path.suffix.lower() in PROHIBITED_SUFFIXES
     ]
     if prohibited:
         raise SystemExit(f"prohibited release files: {prohibited}")

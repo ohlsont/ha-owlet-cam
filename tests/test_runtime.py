@@ -16,11 +16,16 @@ from custom_components.owlet_cam.runtime.elf import (
 
 
 def _minimal_elf(
-    *, machine: int = EM_AARCH64, writable_executable: bool = False
+    *,
+    machine: int = EM_AARCH64,
+    writable_executable: bool = False,
+    include_nobits: bool = False,
+    symbol_defined: bool = True,
 ) -> bytes:
     program_offset = 64
     section_offset = 128
-    string_offset = section_offset + 4 * 64
+    section_count = 5 if include_nobits else 4
+    string_offset = section_offset + section_count * 64
     strings = b"\0libc.so\0probe_symbol\0"
     symbol_offset = string_offset + len(strings)
     dynamic_offset = symbol_offset + 48
@@ -48,7 +53,7 @@ def _minimal_elf(
         56,
         1,
         64,
-        4,
+        section_count,
         0,
     )
     flags = 7 if writable_executable else 5
@@ -95,8 +100,12 @@ def _minimal_elf(
     section(1, 3, string_offset, len(strings))
     section(2, 11, symbol_offset, 48, link=1, entry_size=24)
     section(3, 6, dynamic_offset, 32, link=1, entry_size=16)
+    if include_nobits:
+        section(4, 8, total_size + 4096, 4096)
     data[string_offset : string_offset + len(strings)] = strings
-    struct.pack_into("<IBBHQQ", data, symbol_offset + 24, 9, 0, 0, 1, 0, 0)
+    struct.pack_into(
+        "<IBBHQQ", data, symbol_offset + 24, 9, 0, 0, int(symbol_defined), 0, 0
+    )
     struct.pack_into("<QQ", data, dynamic_offset, 1, 1)
     struct.pack_into("<QQ", data, dynamic_offset + 16, 0, 0)
     return bytes(data)
@@ -124,6 +133,15 @@ def test_reports_missing_required_symbol(tmp_path: Path) -> None:
     assert report.missing_required_symbols == ("missing",)
 
 
+def test_does_not_count_undefined_import_as_export(tmp_path: Path) -> None:
+    library = tmp_path / "library.so"
+    library.write_bytes(_minimal_elf(symbol_defined=False))
+
+    report = inspect_elf(library, required_symbols=frozenset({"probe_symbol"}))
+
+    assert report.required_symbols_present is False
+
+
 def test_rejects_wrong_architecture(tmp_path: Path) -> None:
     library = tmp_path / "library.so"
     library.write_bytes(_minimal_elf(machine=EM_X86_64))
@@ -139,6 +157,15 @@ def test_detects_writable_executable_segment(tmp_path: Path) -> None:
     report = inspect_elf(library)
 
     assert report.has_writable_executable_segment is True
+
+
+def test_accepts_nobits_section_without_file_backing(tmp_path: Path) -> None:
+    library = tmp_path / "library.so"
+    library.write_bytes(_minimal_elf(include_nobits=True))
+
+    report = inspect_elf(library)
+
+    assert report.architecture == "AArch64"
 
 
 @pytest.mark.parametrize(

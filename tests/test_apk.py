@@ -65,9 +65,7 @@ def test_extracts_nested_apkm_split(tmp_path: Path) -> None:
 
 
 def test_rejects_archive_without_arm64_split(tmp_path: Path) -> None:
-    source = _write_archive(
-        tmp_path / "owlet.apk", _application_zip(abi="x86_64")
-    )
+    source = _write_archive(tmp_path / "owlet.apk", _application_zip(abi="x86_64"))
 
     with pytest.raises(OwletArchiveError, match="missing required ARM64"):
         extract_owlet_application(source, tmp_path / "out")

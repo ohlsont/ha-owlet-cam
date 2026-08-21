@@ -17,9 +17,11 @@ _PT_INTERP: Final = 3
 _PF_X: Final = 1
 _PF_W: Final = 2
 _SHT_DYNAMIC: Final = 6
+_SHT_NOBITS: Final = 8
 _SHT_DYNSYM: Final = 11
 _DT_NULL: Final = 0
 _DT_NEEDED: Final = 1
+_SHN_UNDEF: Final = 0
 
 
 class ElfInspectionError(ValueError):
@@ -147,7 +149,10 @@ def _read_sections(
         start = offset + index * entry_size
         values = _unpack_from("<IIQQQQIIQQ", data, start)
         _, section_type, _, _, file_offset, size, link, _, _, entry = values
-        _require_range(data, file_offset, size)
+        # SHT_NOBITS (normally .bss) occupies memory at runtime but has no
+        # corresponding bytes in the ELF file.
+        if section_type != _SHT_NOBITS:
+            _require_range(data, file_offset, size)
         sections.append(
             _Section(
                 section_type=section_type,
@@ -188,8 +193,10 @@ def _read_dynamic_symbols(data: bytes, sections: tuple[_Section, ...]) -> set[st
         if entry_size < 24 or section.size % entry_size:
             raise ElfInspectionError("ELF dynamic symbol table is malformed")
         for relative in range(0, section.size, entry_size):
-            name_offset = _unpack_from("<I", data, section.offset + relative)[0]
-            if name_offset:
+            name_offset, _, _, section_index, _, _ = _unpack_from(
+                "<IBBHQQ", data, section.offset + relative
+            )
+            if name_offset and section_index != _SHN_UNDEF:
                 symbols.add(_string_at(strings, name_offset))
     return symbols
 

@@ -26,6 +26,13 @@ been tested yet. The user has deferred publishing the GitHub/HACS repository
 until core functionality is further along, so Yellow real-account validation is
 still unperformed.
 
+On the separate local feasibility branch, a validly signed Owlet 3.36.0 ARM64
+bundle obtained with apkeep has passed safe extraction, ELF, required-symbol,
+and isolated Bionic `dlopen` checks. The application and extracted proprietary
+files remain ignored under `userfiles/` and are not part of the repository.
+This proves library load compatibility on Linux/ARM64 only; it does not prove a
+camera connection or media stream.
+
 ## Planned runtime modes
 
 - **External bridge** will be the first production-capable camera mode. It will
@@ -84,6 +91,9 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 - Cloud/KMS behavior has comprehensive sanitized fixture coverage but has not
   yet passed the real European account gate on the Yellow.
 - No real Home Assistant Yellow or HACS installation evidence yet.
+- The native libraries require Bionic and cannot be loaded by glibc. The local
+  minimal Bionic probe passed, but it has not run inside Home Assistant Core on
+  Yellow.
 - The local brand art has not been submitted to Home Assistant Brands, so
   validation that requires the public Brands repository may remain pending.
 - The documentation and issue URLs assume future publication at

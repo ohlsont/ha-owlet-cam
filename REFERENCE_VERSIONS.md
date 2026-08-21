@@ -12,6 +12,8 @@ repository for Milestone 0.
 | `AlexxIT/WebRTC` | `0c5421ba97ffa9a2458e0074466340ec411ac92b` | 2025-11-26 | MIT | Root `LICENSE`; lifecycle study deferred | No | Any later architectural observations will be documented independently |
 | `AlexxIT/go2rtc` | `c245815e75e2a5fd60b4290f12bfc04e55a984d3` | 2026-07-13 | MIT | Root `LICENSE`; distribution study deferred | No | Any later use must preserve notices and pin an exact released asset |
 | `ryanbdclark/owlet` | `f8e0067a1e74a523b0bb4b0841b25404a6926ca8` | 2025-04-15 | Apache-2.0 | Root `LICENSE` and `README.md`; confirmed the separate Smart Sock integration/domain and HACS UI conventions | No | The `owlet` domain remains separate and is not modified or overridden |
+| `EFForg/apkeep` | `0a60a4af03444ae237fa018848623ff9cd8b6119` | 2026-05-04 | MIT | Release 1.0.0 ARM64 binary and APKPure backend documentation; used only to download the user's application package without Google credentials | No | Release SHA-256 and William Budington's EFF-hosted signing key were independently verified before use |
+| AOSP `platform/prebuilts/runtime` | `070571b455076f77a01c7b07154a15e545d2b428` | 2025-03-10 | Mixed permissive notices: Apache-2.0, BSD, ISC, MIT, legacy notice/unencumbered | `com.android.runtime-arm64.apex` blob `26a7749e9b232184112897144c97128073776f2a`; Bionic `linker64`, `libc.so`, `libdl.so`, and `libm.so` used for an isolated local load probe | No | Open-source runtime artefacts were downloaded to temporary storage only and are not committed or bundled |
 
 `Owlet-To-Rtsp` and `owlet-go` had no file matching `LICENSE`, `COPYING`, or
 `NOTICE` anywhere in the inspected checkout. The absence of a licence means no
@@ -24,3 +26,11 @@ identifiers are application identity metadata, not Owlet account credentials or
 the prohibited Kalay SDK licence key. Actual Firebase, KMS, UID, AuthKey, and AV
 password values are never persisted outside Home Assistant's configured account
 credentials and the integration process's private memory.
+
+The local native feasibility probe used apkeep as an external acquisition tool,
+not as source code. Its ARM64 release binary had SHA-256
+`5410acebd1b69427adcf98ccfdda6fa4dd3201e0540e5e2c01037b68e0a84049`
+and a valid OpenPGP signature from EFF key fingerprint
+`1073 E74E B38B D6D1 9476 CBF8 EA9D BF9F B761 A677`. The pinned AOSP ARM64
+runtime APEX had SHA-256
+`83bf0dce249728dae48149b80d28b48115c54adad95a352120d58a6ac669d1fc`.

@@ -2,6 +2,17 @@
 
 All notable changes are documented here. Versions follow semantic versioning.
 
+## Development-only local video feasibility work
+
+- Added safe nested APK/APKM/XAPK extraction, SDK-key presence detection, and a
+  dependency-free AArch64 ELF/symbol/dependency inspector.
+- Added a redacted application probe and a freestanding, isolated Bionic
+  `dlopen` helper; no compiled artefacts or proprietary files are committed.
+- Verified a user-supplied, validly signed Owlet 3.36.0 ARM64 bundle and loaded
+  all five required native libraries under a pinned AOSP Bionic runtime.
+- Camera authentication, connection, frames, snapshots, and streaming remain
+  unperformed; this work is not a release or a Milestone 3 gate pass.
+
 ## [0.2.0] - Unreleased
 
 ### Added
