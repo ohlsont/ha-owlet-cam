@@ -13,10 +13,15 @@ account → service → device references when a Cam 1's app-visible serial diff
 from its internal KMS DSN; that internal value is kept in memory only.
 
 The integration creates cloud diagnostics plus cached experimental runtime
-diagnostics. Native work starts only after the disabled-by-default **Run runtime
-probe** button is explicitly enabled and pressed. A separately supervised child
-process receives secrets through stdin only; config-entry unload terminates its
-process group and scrubs the cached SDK key.
+diagnostics. The first native validation starts only after the
+disabled-by-default **Run runtime probe** button is explicitly enabled and
+pressed. A successful explicit probe writes a private, non-secret consent
+marker; later reloads and restarts repeat every archive, checksum, ELF and
+isolated-library gate automatically. Cold-start revalidation waits for Home
+Assistant's public startup-complete event so it does not compete with Core on a
+memory-constrained Yellow. A separately supervised child process receives
+secrets through stdin only; config-entry unload terminates its process group and
+scrubs the cached SDK key.
 
 Core cloud entities include:
 
@@ -109,11 +114,13 @@ Assistant for two simultaneous authenticated viewers. Reopening after idle
 worked, standard `camera.snapshot` produced a valid JPEG, and
 `camera.record` produced a playable five-second MP4. Live diagnostics observed
 one producer, two consumers, healthy media and zero reconnects; after the
-viewers closed, diagnostics reached idle with zero consumers. The full gate is
-not passed: reload waited for active Home Assistant WebRTC consumers to close,
-and restart/reload currently requires an explicit runtime probe before the
-camera stream feature is restored. Direct Core-namespace FFprobe, extended
-soaks, companion-app, outage and physical tests remain unperformed.
+viewers closed, diagnostics reached idle with zero consumers. Automatic runtime
+revalidation now restores `ready` after a settled config-entry reload and after
+a cold Core restart without another button press. Reload still waits for active
+Home Assistant WebRTC consumers to close; after they close, reload completes
+and automatic recovery succeeds. The full gate is not passed because direct
+Core-namespace FFprobe, extended soaks, companion-app, outage and physical tests
+remain unperformed.
 
 ## Planned runtime modes
 
@@ -173,9 +180,10 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 - The embedded camera's snapshot path and bounded continuous Home Assistant
   stream path have displayed real media on Yellow. The loopback source is
   timestamped MPEG-TS carrying copied H.264, not RTSP. The full live-stream gate
-  is incomplete: the runtime probe must be rerun after reload/restart, an
-  active-viewer reload waits for those clients to close, and long-duration,
-  companion-app, outage and physical tests remain unperformed.
+  is incomplete: an active-viewer reload waits for those clients to close, and
+  long-duration, companion-app, outage and physical tests remain unperformed.
+  Settled reload and Core-restart recovery are automatic after the first
+  explicit native validation.
 - Cloud/KMS behavior has comprehensive sanitized fixture coverage and succeeded
   inside Home Assistant Core on Yellow. Wrong-password reauthentication and the
   complete Milestone 1 acceptance sequence remain unperformed.
@@ -198,8 +206,9 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   clients, a valid service snapshot, a playable five-second service recording,
   one producer with two consumers, zero reconnects, and a later idle state with
   zero consumers. Exact live codec profile, bitrate and a direct Core-namespace
-  FFprobe capture were not recorded. Automatic post-restart stream recovery is
-  not yet implemented.
+  FFprobe capture were not recorded. Automatic post-restart and settled-reload
+  runtime recovery passed on Yellow; reload with an open WebRTC viewer still
+  waits for that Home Assistant-managed consumer to close.
 - The local brand art has not been submitted to Home Assistant Brands, so
   validation that requires the public Brands repository may remain pending.
 - The documentation and issue URLs assume future publication at

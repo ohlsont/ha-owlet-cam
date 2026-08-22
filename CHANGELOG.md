@@ -111,12 +111,16 @@ All notable changes are documented here. Versions follow semantic versioning.
   diagnostics showed one producer, two consumers, healthy media, and zero
   reconnects; the final settled state was idle with zero consumers.
 - Reload while two viewers were active waited for Home Assistant's WebRTC
-  consumers to close. After they closed, reload completed, but an explicit
-  runtime probe was required to restore the stream feature. Automatic restart
-  recovery, direct Core-namespace FFprobe, two-hour/overnight soaks, companion
-  app and physical outage tests remain unperformed; the full Milestone 6 gate is
-  therefore incomplete.
-- Current automated validation: 159 tests passed at 86.25% branch-aware
+  consumers to close. Added private prior-validation consent state so settled
+  reloads and restarts rerun every native safety gate automatically without a
+  second button press. Cold-start recovery waits for Home Assistant's public
+  startup-complete event; this passed on Yellow. Active-viewer reload still
+  waits until Home Assistant releases its consumer. Direct Core-namespace
+  FFprobe, two-hour/overnight soaks, companion app and physical outage tests
+  remain unperformed; the full Milestone 6 gate is therefore incomplete.
+- Corrected config-entry unload ordering so forwarded platforms unload before
+  runtime shutdown, and cancel any startup-waiting recovery task on unload.
+- Current automated validation: 161 tests passed at 86.24% branch-aware
   coverage; Ruff and mypy passed. Two independent ARM64 helper builds produced
   the same proprietary-free archive.
 
