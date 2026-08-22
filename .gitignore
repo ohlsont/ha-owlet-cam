@@ -9,6 +9,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .DS_Store
+*.swp
 
 # HACS preserves this directory across upgrades. Runtime contents are private.
 custom_components/owlet_cam/userfiles/*

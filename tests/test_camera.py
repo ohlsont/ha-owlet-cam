@@ -34,6 +34,8 @@ def _camera(
 ) -> tuple[OwletCamEmbeddedCamera, MagicMock]:
     runtime = manager or MagicMock(spec=OwletRuntimeManager)
     runtime.snapshot_available = True
+    runtime.stream_available = False
+    runtime.snapshot = SimpleNamespace(stream_healthy=False)
     runtime.async_add_listener.return_value = lambda: None
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -59,6 +61,27 @@ def test_snapshot_camera_claims_no_stream_feature(hass: HomeAssistant) -> None:
     assert camera.content_type == "image/jpeg"
     assert camera.available
     manager.async_capture_snapshot.assert_not_called()
+
+
+async def test_camera_claims_stream_only_after_runtime_gate(
+    hass: HomeAssistant,
+) -> None:
+    camera, manager = _camera(hass)
+    manager.stream_available = True
+    manager.snapshot.stream_healthy = True
+    manager.async_get_stream_source = AsyncMock(
+        return_value="http://127.0.0.1:12345/private.h264"
+    )
+
+    assert camera.supported_features == CameraEntityFeature.STREAM
+    assert camera.use_stream_for_stills
+    assert camera.is_streaming
+    assert await camera.stream_source() == "http://127.0.0.1:12345/private.h264"
+
+    manager.async_get_stream_source.side_effect = OwletRuntimeError(
+        "stream_runtime_missing", "safe"
+    )
+    assert await camera.stream_source() is None
 
 
 async def test_snapshot_camera_caches_and_coalesces_concurrent_requests(

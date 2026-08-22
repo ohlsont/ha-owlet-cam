@@ -1,4 +1,4 @@
-"""Snapshot-only embedded camera platform for Owlet Cam."""
+"""Embedded snapshot and gated live-stream camera platform for Owlet Cam."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ async def async_setup_entry(
     entry: OwletCamConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up one gated snapshot-only embedded camera."""
+    """Set up one gated embedded camera."""
     manager = entry.runtime_data.runtime_manager
     if entry.data.get(CONF_MODE) != MODE_EMBEDDED or manager is None:
         return
@@ -37,10 +37,9 @@ async def async_setup_entry(
 
 
 class OwletCamEmbeddedCamera(OwletCamRuntimeEntity, Camera):
-    """Expose on-demand JPEG snapshots without claiming stream support."""
+    """Expose snapshots and a timestamped loopback media source after its gate."""
 
     _attr_name = None
-    _attr_supported_features = CameraEntityFeature(0)
 
     def __init__(self, entry: OwletCamConfigEntry) -> None:
         Camera.__init__(self)
@@ -67,9 +66,31 @@ class OwletCamEmbeddedCamera(OwletCamRuntimeEntity, Camera):
 
     @property
     @override
+    def supported_features(self) -> CameraEntityFeature:
+        """Claim streaming only when the versioned helper includes it."""
+        if self.runtime_manager.stream_available:
+            return CameraEntityFeature.STREAM
+        return CameraEntityFeature(0)
+
+    @property
+    @override
     def use_stream_for_stills(self) -> bool:
-        """Keep stream integration disabled for the snapshot-only milestone."""
-        return False
+        """Reuse the continuous producer once the live path is gated."""
+        return self.runtime_manager.stream_available
+
+    @property
+    @override
+    def is_streaming(self) -> bool:
+        """Return cached producer health without performing I/O."""
+        return self.runtime_manager.snapshot.stream_healthy
+
+    @override
+    async def stream_source(self) -> str | None:
+        """Return the integration-owned timestamped loopback media source."""
+        try:
+            return await self.runtime_manager.async_get_stream_source()
+        except OwletRuntimeError:
+            return None
 
     @override
     async def async_camera_image(

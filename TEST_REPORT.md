@@ -6,12 +6,13 @@ or real-system evidence.
 | Milestone | Commit | Integration version | Home Assistant version | Home Assistant OS version | Architecture | Camera model | Camera firmware | Automated tests | Yellow test | Real camera test | Result | Evidence | Unperformed tests | Known issues |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 — HACS scaffold and lifecycle | `67fae5f` | 0.1.0 | 2026.8.2 current; 2024.5.0 minimum at that milestone | HAOS 18.2 | AArch64 Home Assistant Yellow; private manual install | None | None | **Passed locally:** original 6-test lifecycle suite; later suites continue to cover lifecycle | **Partial:** manual setup, reload, unload, re-enable, restart, entity removal/restoration, and clean Owlet logs passed | Not applicable | **Lifecycle gate passed; HACS-installation gate deferred by user** | Local tests plus authenticated HA-MCP lifecycle evidence on 2026-08-22 | HACS custom-repository acceptance, HACS Action and Hassfest in GitHub context | Public repository intentionally deferred until core functionality works |
-| 1 — Cloud authentication and KMS | `165093f` | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 | AArch64 Yellow | Owlet Cam 1, user-reported; not hardware-verified | Not established | **Passed locally:** current full suite 125 tests at 86.49% branch-aware coverage; Ruff and mypy passed | **Partial:** manual install, setup, reload, entities, cloud/KMS, and redacted diagnostics passed | **Passed on Yellow:** EMEA authentication, authorized camera discovery, and KMS credential-presence validation | **Cloud/KMS Yellow core path passed; full Milestone 1 gate incomplete** | Loaded config entry; cloud and credential booleans on; diagnostics redacted email, password and camera identifier | HACS installation and wrong-password reauthentication correction | The app-visible serial differs from the internal KMS DSN; the production client resolves this relationship while keeping the internal value in memory only |
+| 1 — Cloud authentication and KMS | `165093f` | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 | AArch64 Yellow | Owlet Cam 1, user-reported; not hardware-verified | Not established | **Passed locally:** Milestone 1-era full suite 125 tests at 86.49% branch-aware coverage; Ruff and mypy passed | **Partial:** manual install, setup, reload, entities, cloud/KMS, and redacted diagnostics passed | **Passed on Yellow:** EMEA authentication, authorized camera discovery, and KMS credential-presence validation | **Cloud/KMS Yellow core path passed; full Milestone 1 gate incomplete** | Loaded config entry; cloud and credential booleans on; diagnostics redacted email, password and camera identifier | HACS installation and wrong-password reauthentication correction | The app-visible serial differs from the internal KMS DSN; the production client resolves this relationship while keeping the internal value in memory only |
 | 2 — External bridge | — | — | — | — | — | — | — | Unperformed | Unperformed | Unperformed | Not started | — | All | Blocked by Milestone 0 gate |
-| 3 — Embedded ARM64 runtime probe | `165093f`, revalidated with `11ba0f7` | 0.2.0 base; helper 0.4.0-dev; no embedded release | Core 2026.8.2 | HAOS 18.2 | Yellow AArch64; ARM64 macOS/Docker/emulator local targets | Owlet Cam 1, user-reported | Not established | **Passed locally:** current full suite 126 passed at 86.60% coverage; Ruff and mypy passed | **Passed native capability gate after correction:** runtime `ready`, all five required libraries loaded, unload/re-enable and restart recovered cleanly | No-camera library probe passed on Yellow; no camera connection attempted | **Yellow native runtime gate passed; release-distribution checks remain** | Helper 0.4.0-dev, compatibility `true`, no safe error, Core remained loaded, zero Repairs, and direct `ps` checks found no probe helper after the revalidation | HACS release asset download, separate `probe_runtime` command, detected APK version reporting, GitHub release build | Initial in-memory extraction caused code 137; disk-spooling correction passed. Restart was unusually slow and the user performed an additional manual restart; final setup was clean |
+| 3 — Embedded ARM64 runtime probe | `165093f`, revalidated with `11ba0f7` | 0.2.0 base; helper 0.4.0-dev; no embedded release | Core 2026.8.2 | HAOS 18.2 | Yellow AArch64; ARM64 macOS/Docker/emulator local targets | Owlet Cam 1, user-reported | Not established | **Passed locally:** Milestone 3-era full suite 126 passed at 86.60% coverage; Ruff and mypy passed | **Passed native capability gate after correction:** runtime `ready`, all five required libraries loaded, unload/re-enable and restart recovered cleanly | No-camera library probe passed on Yellow; no camera connection attempted | **Yellow native runtime gate passed; release-distribution checks remain** | Helper 0.4.0-dev, compatibility `true`, no safe error, Core remained loaded, zero Repairs, and direct `ps` checks found no probe helper after the revalidation | HACS release asset download, separate `probe_runtime` command, detected APK version reporting, GitHub release build | Initial in-memory extraction caused code 137; disk-spooling correction passed. Restart was unusually slow and the user performed an additional manual restart; final setup was clean |
 | 4 — Embedded connection and frame probe | `11ba0f7` plus 2026-08-22 live evidence | Development-only; no embedded release | Core 2026.8.2 | HAOS 18.2 | Yellow AArch64; Android 15 ARM64 emulator on ARM64 macOS | Owlet Cam 1, user-reported | Not established | **Passed:** 126 tests at 86.60% coverage; Ruff and mypy passed; session-mode helper passed compile, ELF, safe-error, checksum and atomic-install validation | **Passed:** repeated 100-frame probes, rapid reacquisition, Dream-open behavior, post-Dream reacquisition, live `lan` mode, clean shutdown, and three empty direct orphan-process captures | **Passed on Yellow:** real H.264 with SPS/PPS/IDR; helper connected while Dream was actively showing video and reacquired 1080p after Dream closed; earlier Dream post-probe recovery was user-confirmed | **Complete Milestone 4 Yellow gate passed** | Initial three probes: 1920×1080, 13.599–14.341 FPS, 71–262 ms. Dream-open probe: 228,479 bytes, 640×360, 13.7 FPS, 232 ms, `lan`. Dream-closed probe: 530,039 bytes, 1920×1080, 13.814 FPS, 343 ms, `lan`. Every probe had 100 frames, 7/7/7 SPS/PPS/IDR and clean shutdown; entry loaded, zero Repairs, no Owlet error, no orphan helper | Snapshot/camera entity, continuous streaming, physical outage/power-cycle tests | Docker/OrbStack IOTC timed out with `-13`; Dream-open session selected 640×360 while the Dream-closed session returned to 1080p; no claim is made that Dream itself remained uninterrupted during the helper probe |
 | 5 — Snapshot-only embedded camera | `3f2a73a` | 0.2.0 integration base; helper 0.5.0-dev; no embedded release | Core 2026.8.2 | HAOS 18.2 | Yellow AArch64; local macOS ARM64 plus reproducible AArch64 Linux build | Owlet Cam 1, user-reported | Not established | **Passed locally:** 149 tests at 86.97% coverage; Ruff, mypy, secret/release checks; both helper modes pass freestanding compilation; runtime archive reproducible and atomically installable | **Passed:** clean setup/restarts, runtime gate, native camera entity, real JPEGs, ten sequential calls, simultaneous API callers, two independent dashboard clients, standard `camera.snapshot`, periodic dashboard soak, stable memory, zero active Repairs and no new Owlet traceback | **Passed snapshot path:** real 1920×1080 and 864×480 source captures decoded to JPEG; standard snapshot service produced a valid baseline 864×480 JPEG; user confirmed Dream live video recovered after the final run | **Complete Milestone 5 Yellow gate passed** | Initial visible 1920×1080 JPEG; nine additional cache-expired fresh captures succeeded before Owlet rate-limited the tenth KMS lookup. The resulting stuck-state bug was corrected and covered by regression tests. Post-fix: fresh capture succeeded; ten rapid sequential calls returned valid JPEGs (first 2265 ms; cached calls 37–79 ms); two simultaneous API callers received one identical JPEG in 1873 ms; simultaneous in-app-browser and Chrome reloads both showed the camera, runtime `ready`, and no lost connection. During a 30-minute two-dashboard periodic-snapshot soak, Core memory decreased from 815,271,936 bytes (41.22%) to 801,710,080 bytes (40.54%); CPU samples were 5.41% then 1.74%. `camera.snapshot` hash `25d7a7a1…06d8` was independently verified before both remote and local test copies were deleted | Physical camera/Wi-Fi outages; entry unload during a real snapshot; direct process enumeration inside the Core PID namespace | Owlet rate-limits repeated fresh KMS lookups; the five-second cache prevents ordinary rapid calls from amplifying KMS/session use. The pre-fix rate-limit traceback remains in historical logs, but no new traceback appeared after the corrected restart. The supported SSH add-on lacks Core/host PID visibility; no host PID, Docker or privileged workaround was enabled, so direct Core-namespace orphan enumeration remains unperformed |
-| 6–8 — Live stream through stable release | — | — | — | — | — | — | — | Unperformed | Unperformed | Unperformed | Milestone 6 may begin | — | All continuous-stream, outage and release gates | External bridge and HACS-publication work remain separately deferred by user |
+| 6 — Embedded live H.264 stream | Pending Milestone 6 working-state commit plus 2026-08-22 live evidence | 0.2.0 integration base; helper 0.6.0-dev; no embedded release | Core 2026.8.2 | HAOS 18.2 | Yellow AArch64; reproducible AArch64 Linux build | Owlet Cam 1, user-reported | Not established | **Passed locally:** 159 tests at 86.25% branch-aware coverage; Ruff and mypy passed; two independent helper builds were byte-identical | **Partial:** real changing live video, two simultaneous viewers, idle/reopen, `camera.snapshot`, `camera.record`, unload/reload after viewers closed, zero Repairs and no new Owlet error | **Passed bounded media path:** Home Assistant rendered real infrared frames and produced a valid JPEG plus playable five-second MP4 | **Bounded media path passed; full Milestone 6 gate incomplete** | Corrected loopback diagnostics: streaming, healthy, 389 frames, two consumers, zero reconnects; final settled state: idle, inactive, 1,838 frames, zero consumers, loopback binding | Direct Core-namespace FFprobe; exact live profile/bitrate; automatic post-restart readiness; two-hour and overnight soaks; companion-app; Dream coexistence; physical outage/power-cycle/Yellow reboot; direct Core PID orphan enumeration | Raw H.264 failed with missing DTS and was replaced by timestamped MPEG-TS. Active-viewer reload waited for WebRTC clients to close; reload/restart currently requires an explicit runtime probe to restore STREAM |
+| 7–8 — Upload UI through stable release | — | — | — | — | — | — | — | Unperformed | Unperformed | Unperformed | Not started | — | All upload, hardening and release gates | External bridge and HACS-publication work remain separately deferred by user |
 
 ## Milestone 0 Yellow validation fields
 
@@ -27,10 +28,68 @@ or real-system evidence.
 | Reload result | Config-entry reload, re-enable, and restart restored `loaded` without duplicate entities observed |
 | Log result | Only Home Assistant's standard unverified-custom-integration warning; no Owlet exception/warning |
 
-No HACS acceptance, physical outage, RTSP, or live-dashboard stream claim is
-made by this report. Home Assistant camera and snapshot claims are limited to
-the bounded real JPEG evidence recorded below; it is not a
-camera-entity or continuous-stream claim.
+No HACS acceptance, physical outage, RTSP, extended-soak or stable-release claim
+is made by this report. The live-dashboard claim is limited to the bounded real
+Milestone 6 evidence below; automatic restart recovery and the full continuous-
+stream acceptance gate remain incomplete.
+
+## Milestone 6 bounded live-stream validation — 2026-08-22
+
+- Two independent clean-room ARM64 helper builds produced the same
+  proprietary-free archive, SHA-256
+  `c754bd80cb0c321ffaa26c2db8c7905380e2400005bd622095ec004cf3b7cf68`.
+  The private integration/runtime deployment archive had SHA-256
+  `bfc718da2ba1d2f4f740b4d3c9820c8592dfe7dea94b99a544fd29e6fb4827f4`;
+  Yellow independently computed the same value before installation. Neither
+  archive contains the user's application, proprietary library, SDK key or
+  camera credential.
+- Home Assistant initially failed to import the deployed integration because
+  rollback copies containing manifests had been left under
+  `custom_components`. They were moved to `/config`, outside integration
+  discovery, and the rollback-aware deploy script was corrected before further
+  testing. Core then started with valid configuration, no Owlet import error and
+  no active Repair.
+- The first media transport exposed raw Annex-B H.264 over loopback HTTP. It
+  displayed video, but Home Assistant's stream worker reported seven consecutive
+  packets without DTS. That attempt failed acceptance. The source was replaced
+  with independently implemented MPEG-TS tables, PES timestamps and PCR while
+  preserving copy-only H.264. The corrected source file's deployed SHA-256 was
+  `5ec9ee2152633a2a6f0b51aa90f205a65f7ddfc653fd33d6f43926f77a71bb65`.
+- The corrected source is bound to `127.0.0.1` on an ephemeral port with an
+  unguessable path. It waits for SPS/PPS/IDR before reporting healthy, starts one
+  TUTK producer for the first consumer, fans out to multiple consumers, and
+  supports bounded reconnect and idle teardown. No second go2rtc process,
+  global go2rtc configuration, LAN listener or video transcode is used.
+- Home Assistant's native camera dialog displayed real changing infrared room
+  frames. Two samples 3.5 seconds apart were about 49 kB each and differed in
+  47,896 encoded bytes, establishing that the result was not one cached still.
+  Two simultaneous authenticated Home Assistant viewers displayed real frames.
+  Reopening after idle also displayed real frames.
+- Live redacted diagnostics reported `streaming`, active and healthy, 389
+  frames, two consumers, zero reconnects and loopback binding. After both
+  viewers and Home Assistant's managed stream consumers closed, the final state
+  reported `idle`, inactive, 1,838 frames, zero consumers and zero reconnects.
+  There were no active Repairs or current Owlet system-log entries.
+- Standard `camera.snapshot` wrote a valid real-room JPEG. Standard
+  `camera.record` wrote a playable five-second real-room MP4. Both temporary
+  validation files were deleted from Yellow after verification; they are not
+  recoverable there but can be reproduced by calling the services again.
+- Reload was requested while two WebRTC viewers were active. The entry remained
+  in `unload_in_progress` until both viewers closed, then reached `loaded`.
+  After reload its runtime was intentionally unprepared and STREAM unavailable;
+  one explicit runtime probe restored `ready` and STREAM. This proves teardown
+  waits for active Home Assistant consumers, but it fails the automatic reload
+  recovery requirement.
+- Local validation after the timestamp correction: `159 passed`, 86.25%
+  branch-aware coverage, Ruff format/check and mypy passed. Focused transport
+  tests validate PAT/PMT CRCs and PIDs, PES timestamping, 188-byte packetization,
+  private-path rejection and multi-consumer fan-out.
+- Direct FFprobe from Core's loopback namespace, exact live codec profile and
+  bitrate, two-hour viewing, overnight idle/reconnect, companion-app access,
+  Dream-open coexistence, physical camera/Wi-Fi/internet interruptions, Yellow
+  reboot, and direct Core-namespace orphan-process enumeration were not
+  performed. The bounded media path passes; the complete Milestone 6 gate does
+  not.
 
 ## Yellow live validation — 2026-08-22
 

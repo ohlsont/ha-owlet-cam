@@ -29,6 +29,7 @@ _ALLOWED_FILES: Final = frozenset(
         "bin/frame_probe",
         "bin/probe_libraries",
         "bin/snapshot_capture",
+        "bin/stream_capture",
         "runtime/bin/linker64",
         "runtime/lib64/libc.so",
         "runtime/lib64/libdl.so",
@@ -41,6 +42,7 @@ _EXECUTABLES: Final = frozenset(
         "bin/frame_probe",
         "bin/probe_libraries",
         "bin/snapshot_capture",
+        "bin/stream_capture",
         "runtime/bin/linker64",
     }
 )

@@ -91,6 +91,34 @@ All notable changes are documented here. Versions follow semantic versioning.
   Direct Core-PID orphan enumeration remains explicitly unperformed because the
   supported SSH add-on lacks that namespace; no host PID, Docker, privileged or
   security-weakening workaround was used.
+- Added a fourth isolated helper mode that keeps one TUTK session open and sends
+  length-framed Annex-B H.264 through stdout while reserving stderr for bounded,
+  redacted lifecycle events. Secrets still arrive only through startup stdin.
+- Added one integration-managed loopback media source with first-viewer start,
+  one producer/many consumers, SPS/PPS/IDR gating, reconnect bounds, configurable
+  idle shutdown, keep-warm support and config-entry teardown.
+- Rejected the initial raw-H.264 HTTP transport after Home Assistant's stream
+  worker reported seven consecutive packets without DTS. Replaced it with an
+  independently implemented, timestamped single-program MPEG-TS packetizer
+  carrying copied H.264 over `127.0.0.1`; no private go2rtc process, global
+  configuration change or video transcode is used.
+- Corrected the private Yellow deploy script so rollback directories live
+  outside `custom_components`; Home Assistant had treated a dot-prefixed backup
+  manifest as another integration and raised an import error.
+- Validated the corrected path on Yellow with changing real infrared frames in
+  two simultaneous Home Assistant viewers, reconnect after idle, a valid
+  `camera.snapshot` JPEG, and a playable five-second `camera.record` MP4. Live
+  diagnostics showed one producer, two consumers, healthy media, and zero
+  reconnects; the final settled state was idle with zero consumers.
+- Reload while two viewers were active waited for Home Assistant's WebRTC
+  consumers to close. After they closed, reload completed, but an explicit
+  runtime probe was required to restore the stream feature. Automatic restart
+  recovery, direct Core-namespace FFprobe, two-hour/overnight soaks, companion
+  app and physical outage tests remain unperformed; the full Milestone 6 gate is
+  therefore incomplete.
+- Current automated validation: 159 tests passed at 86.25% branch-aware
+  coverage; Ruff and mypy passed. Two independent ARM64 helper builds produced
+  the same proprietary-free archive.
 
 ## [0.2.0] - Unreleased
 

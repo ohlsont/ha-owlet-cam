@@ -28,6 +28,18 @@ The same source is compiled with `SNAPSHOT_CAPTURE` into a distinct helper that
 stops after a decodable SPS/PPS/IDR access unit and writes those H.264 bytes only
 to a validated inherited descriptor. No media is mixed with its JSON stdout.
 
+For Milestone 6 the source is also compiled with `STREAM_CAPTURE`. That helper
+keeps the single TUTK session open, writes each Annex-B access unit to stdout as
+a four-byte big-endian length followed by media bytes, and reserves stderr for
+one bounded, redacted lifecycle event. SIGTERM and SIGINT request native AV/IOTC
+teardown before exit. The Home Assistant process never loads the libraries.
+
+`scripts/build_arm64_helper_in_container.sh` performs the complete reproducible
+ARM64 build inside the pinned Debian image. It downloads the AOSP APEX only from
+the pinned Android Git commit, verifies its SHA-256 before extraction, builds all
+four clean-room helpers, and invokes `scripts/build_helper_runtime.py`. Two
+independent Milestone 6 builds produced the same byte-for-byte archive.
+
 `scripts/build_helper_runtime.py` now creates a deterministic `tar.gz` with a
 per-file runtime manifest, the minimal open-source runtime, and complete AOSP
 and integration licence notices. Its output is a local test artefact until the

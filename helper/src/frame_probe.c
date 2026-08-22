@@ -25,6 +25,8 @@ extern ssize_t write(int fd, const void *buffer, size_t count);
 extern int clock_gettime(int clock_id, struct timespec *value);
 extern int usleep(unsigned int microseconds);
 extern void _exit(int status) __attribute__((noreturn));
+typedef void (*signal_handler_fn)(int);
+extern signal_handler_fn signal(int signal_number, signal_handler_fn handler);
 
 #define RTLD_NOW 2
 #define RTLD_GLOBAL 0x100
@@ -39,10 +41,17 @@ extern void _exit(int status) __attribute__((noreturn));
 #define AV_ER_DATA_NOREADY -20012
 #define AV_ER_LOSED_THIS_FRAME -20014
 #define AV_ER_INCOMPLETE_FRAME -20013
-#ifdef SNAPSHOT_CAPTURE
+#define SIGTERM 15
+#define SIGINT 2
+#ifdef STREAM_CAPTURE
+#define EVENT_NAME "stream_capture"
+#define CONTROL_FD 2
+#elif defined(SNAPSHOT_CAPTURE)
 #define EVENT_NAME "snapshot_capture"
+#define CONTROL_FD 1
 #else
 #define EVENT_NAME "frame_probe"
+#define CONTROL_FD 1
 #endif
 
 typedef int (*set_license_fn)(const char *key);
@@ -139,6 +148,14 @@ struct bit_reader {
 
 static uint8_t frame_buffer[FRAME_BUFFER_SIZE];
 static uint8_t rbsp_buffer[4096];
+#ifdef STREAM_CAPTURE
+static volatile int stop_requested;
+
+static void request_stop(int signal_number) {
+    (void)signal_number;
+    stop_requested = 1;
+}
+#endif
 
 static size_t text_length(const char *value) {
     size_t length = 0;
@@ -152,7 +169,7 @@ static void write_text(const char *value) {
     size_t remaining = text_length(value);
     const char *cursor = value;
     while (remaining > 0) {
-        ssize_t written = write(1, cursor, remaining);
+        ssize_t written = write(CONTROL_FD, cursor, remaining);
         if (written <= 0) {
             return;
         }
@@ -161,7 +178,7 @@ static void write_text(const char *value) {
     }
 }
 
-#ifdef SNAPSHOT_CAPTURE
+#if defined(SNAPSHOT_CAPTURE) || defined(STREAM_CAPTURE)
 static int write_all_fd(int fd, const uint8_t *data, size_t size) {
     while (size > 0) {
         ssize_t written = write(fd, data, size);
@@ -172,6 +189,19 @@ static int write_all_fd(int fd, const uint8_t *data, size_t size) {
         size -= (size_t)written;
     }
     return 1;
+}
+#endif
+
+#ifdef STREAM_CAPTURE
+static int write_stream_frame(const uint8_t *data, size_t size) {
+    uint8_t header[4];
+    if (size == 0 || size > FRAME_BUFFER_SIZE) return 0;
+    header[0] = (uint8_t)(size >> 24);
+    header[1] = (uint8_t)(size >> 16);
+    header[2] = (uint8_t)(size >> 8);
+    header[3] = (uint8_t)size;
+    return write_all_fd(1, header, sizeof(header)) &&
+           write_all_fd(1, data, size);
 }
 #endif
 
@@ -187,7 +217,7 @@ static void write_unsigned(unsigned long value) {
         value /= 10;
     }
     while (used > 0) {
-        write(1, &digits[--used], 1);
+        write(CONTROL_FD, &digits[--used], 1);
     }
 }
 
@@ -756,6 +786,10 @@ static int run_probe(void) {
         emit_error("invalid_input", -1);
         goto cleanup;
     }
+#ifdef STREAM_CAPTURE
+    signal(SIGTERM, request_stop);
+    signal(SIGINT, request_stop);
+#endif
     if (!load_api(&api, &global_handle, &iotc_handle, &av_handle)) {
         emit_error("library_symbols", -1);
         goto cleanup;
@@ -842,7 +876,11 @@ static int run_probe(void) {
         goto cleanup;
     }
     first_frame_started_ms = monotonic_ms();
+#ifdef STREAM_CAPTURE
+    while (!stop_requested) {
+#else
     while (stats.frames < 100 && monotonic_ms() - first_frame_started_ms < 30000) {
+#endif
         int data_size = 0, frame_size = 0, info_size = 0;
         uint32_t frame_number = 0;
         native_code = api.av_recv_frame2(
@@ -856,7 +894,13 @@ static int run_probe(void) {
                 stats.frames++;
                 stats.bytes += (unsigned long)data_size;
                 {
-#ifdef SNAPSHOT_CAPTURE
+#ifdef STREAM_CAPTURE
+                    inspect_annex_b(frame_buffer, (size_t)data_size, &stats);
+                    if (!write_stream_frame(frame_buffer, (size_t)data_size)) {
+                        emit_error("stream_output", -1);
+                        goto cleanup;
+                    }
+#elif defined(SNAPSHOT_CAPTURE)
                     uint32_t nal_types =
                         inspect_annex_b(frame_buffer, (size_t)data_size, &stats);
                     if ((nal_types & 7U) == 7U) {
@@ -884,6 +928,12 @@ static int run_probe(void) {
         emit_error("receive_frame", native_code);
         goto cleanup;
     }
+#ifdef STREAM_CAPTURE
+    if (stats.frames == 0) {
+        emit_error("no_frame_timeout", native_code);
+        goto cleanup;
+    }
+#else
 #ifdef SNAPSHOT_CAPTURE
     if (stats.capture_bytes == 0) {
 #else
@@ -892,6 +942,7 @@ static int run_probe(void) {
         emit_error("no_frame_timeout", native_code);
         goto cleanup;
     }
+#endif
     result = 0;
 
 cleanup:

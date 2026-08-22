@@ -4,7 +4,7 @@ Owlet Cam is a clean-room Home Assistant custom integration intended to expose
 Owlet cameras as native camera and room-sensor entities. It is not affiliated
 with, endorsed by, or supported by Owlet or ThroughTek.
 
-## Current status: Yellow frame and Dream coexistence gate passed
+## Current status: bounded Yellow live video works; Milestone 6 remains partial
 
 Version `0.2.0` implements clean-room, asynchronous Owlet cloud authentication
 and camera KMS validation. Embedded Experimental setup can validate a European
@@ -84,17 +84,36 @@ concurrent requests. Yellow produced visible 1920×1080 and 864×480 JPEGs; ten
 sequential calls, two simultaneous API callers, two independent dashboard
 clients and `camera.snapshot` passed. During a 30-minute periodic dashboard
 snapshot soak, Core memory decreased by 1.66%, and the user confirmed Dream
-reclaimed live video afterward. The camera entity claims no stream feature.
+reclaimed live video afterward. At that milestone the camera entity claimed no
+stream feature; the separately gated Milestone 6 path described below now does.
 Direct process enumeration inside the Core PID namespace remains unperformed:
 the supported SSH add-on cannot see that namespace, and no host-PID, Docker or
 privileged workaround was enabled.
 
 A deterministic package script now creates a checksum-manifested ARM64 runtime
-containing only the three clean-room helpers, a minimal pinned AOSP Bionic runtime,
+containing only four clean-room helpers, a minimal pinned AOSP Bionic runtime,
 and licence notices. The current local archive was scanned against configured
 secrets and common token patterns; no user application or proprietary library
-is included. It remains a local test artefact until the Yellow gate passes and
-release hosting is enabled.
+is included. It remains a local test artefact until release hosting is enabled.
+
+Milestone 6 now has a bounded real-media result on Yellow. One isolated helper
+owns the TUTK session and emits length-framed Annex-B H.264. The integration
+adds timestamps and packages the access units into a single-program MPEG-TS
+source bound to `127.0.0.1`; Home Assistant's supported stream stack consumes
+that source. No video transcoding occurs and no second go2rtc process or global
+configuration is used. A raw-H.264 first attempt was rejected after Home
+Assistant reported missing DTS; it was replaced before acceptance testing.
+
+The corrected source displayed changing real infrared room frames in Home
+Assistant for two simultaneous authenticated viewers. Reopening after idle
+worked, standard `camera.snapshot` produced a valid JPEG, and
+`camera.record` produced a playable five-second MP4. Live diagnostics observed
+one producer, two consumers, healthy media and zero reconnects; after the
+viewers closed, diagnostics reached idle with zero consumers. The full gate is
+not passed: reload waited for active Home Assistant WebRTC consumers to close,
+and restart/reload currently requires an explicit runtime probe before the
+camera stream feature is restored. Direct Core-namespace FFprobe, extended
+soaks, companion-app, outage and physical tests remain unperformed.
 
 ## Planned runtime modes
 
@@ -138,8 +157,8 @@ is available only when Core starts with `OWLET_CAM_DEV_MODE=1`.
 Configuration, reauthentication, reconfiguration, and grouped general/embedded
 options are implemented in the UI. Defaults favor stability and coexistence:
 keep-warm, audio, direct-P2P preference, and experimental local sensors are all
-off. Screenshots have not been captured because Yellow UI validation is
-unperformed; fabricated screenshots are not included.
+off. Real Yellow UI video was visually verified, but no screenshot containing
+the user's room is committed to this repository.
 
 ## Privacy and security
 
@@ -151,10 +170,12 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 
 ## Known limitations
 
-- The embedded snapshot-only camera and standard `camera.snapshot` service have
-  passed their real JPEG, concurrency, periodic-soak and official-app recovery
-  gates on Yellow. There is no bridge connection, RTSP source, or continuous
-  Home Assistant stream.
+- The embedded camera's snapshot path and bounded continuous Home Assistant
+  stream path have displayed real media on Yellow. The loopback source is
+  timestamped MPEG-TS carrying copied H.264, not RTSP. The full live-stream gate
+  is incomplete: the runtime probe must be rerun after reload/restart, an
+  active-viewer reload waits for those clients to close, and long-duration,
+  companion-app, outage and physical tests remain unperformed.
 - Cloud/KMS behavior has comprehensive sanitized fixture coverage and succeeded
   inside Home Assistant Core on Yellow. Wrong-password reauthentication and the
   complete Milestone 1 acceptance sequence remain unperformed.
@@ -173,6 +194,12 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   FPS. Direct checks found no orphan helper. This passes the bounded frame-probe
   gate but is not snapshot or continuous-stream evidence, and it does not claim
   Dream itself remained uninterrupted during the helper probe.
+- The bounded Milestone 6 run showed changing real frames in two Home Assistant
+  clients, a valid service snapshot, a playable five-second service recording,
+  one producer with two consumers, zero reconnects, and a later idle state with
+  zero consumers. Exact live codec profile, bitrate and a direct Core-namespace
+  FFprobe capture were not recorded. Automatic post-restart stream recovery is
+  not yet implemented.
 - The local brand art has not been submitted to Home Assistant Brands, so
   validation that requires the public Brands repository may remain pending.
 - The documentation and issue URLs assume future publication at

@@ -46,6 +46,7 @@ from .protocol import (
     parse_library_probe_output,
     parse_snapshot_capture_output,
 )
+from .stream import H264LoopbackServer
 
 RUNTIME_LAYOUT_VERSION: Final = 1
 RUNTIME_MANIFEST: Final = "runtime-manifest.json"
@@ -54,6 +55,7 @@ SUPPORTED_MACHINE: Final = "aarch64"
 _FRAME_PROBE_TIMEOUT: Final = 75.0
 _LIBRARY_PROBE_TIMEOUT: Final = 20.0
 _SNAPSHOT_CAPTURE_TIMEOUT: Final = 30.0
+_MAX_RECONNECT_BACKOFF: Final = 300.0
 _PROCESS_SESSION: Final = secrets.token_hex(8)
 _REQUIRED_RUNTIME_FILES: Final = frozenset(
     {
@@ -115,6 +117,7 @@ class RuntimeManifest:
     version: str
     architecture: str
     root: Path
+    files: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +139,7 @@ class PreparedRuntime:
     library_directory: Path
     libraries: tuple[NativeLibraryReport, ...]
     source_sha256: str
+    stream_helper_available: bool = False
 
 
 @dataclass(slots=True)
@@ -152,6 +156,11 @@ class RuntimeSnapshot:
     last_snapshot_at: datetime | None = None
     last_snapshot_width: int | None = None
     last_snapshot_height: int | None = None
+    stream_status: str = "idle"
+    stream_healthy: bool = False
+    stream_active: bool = False
+    stream_frames: int = 0
+    stream_reconnect_count: int = 0
 
 
 class OwletRuntimeManager:
@@ -165,6 +174,10 @@ class OwletRuntimeManager:
         client: OwletCloudClient,
         camera_identifier: str,
         runner: OwletHelperProcessRunner | None = None,
+        keep_warm: bool = False,
+        idle_disconnect_timeout: float = 60.0,
+        no_frame_timeout: float = 15.0,
+        reconnect_backoff: float = 30.0,
     ) -> None:
         self._hass = hass
         self._root = root
@@ -172,10 +185,22 @@ class OwletRuntimeManager:
         self._camera_identifier = camera_identifier
         self._runner = runner or OwletHelperProcessRunner()
         self._lock = asyncio.Lock()
+        self._stream_lock = asyncio.Lock()
         self._listeners: set[Callable[[], None]] = set()
         self._prepared: PreparedRuntime | None = None
         self._sdk_key: bytearray | None = None
         self._shutdown = False
+        self._keep_warm = keep_warm
+        self._idle_disconnect_timeout = max(0.0, idle_disconnect_timeout)
+        self._no_frame_timeout = max(1.0, no_frame_timeout)
+        self._reconnect_backoff = max(0.0, reconnect_backoff)
+        self._stream_requested = False
+        self._stream_task: asyncio.Task[None] | None = None
+        self._idle_disconnect_task: asyncio.Task[None] | None = None
+        self._stream_server = H264LoopbackServer(
+            on_first_client=self._async_stream_client_connected,
+            on_last_client=self._async_stream_client_disconnected,
+        )
         self.snapshot = RuntimeSnapshot()
 
     @property
@@ -193,6 +218,21 @@ class OwletRuntimeManager:
         """Return whether the gated snapshot path is currently usable."""
         return self.frame_probe_available and self.snapshot.status != "error"
 
+    @property
+    def stream_available(self) -> bool:
+        """Return the cached continuous-stream capability gate."""
+        return (
+            self.snapshot_available
+            and self.snapshot.status == "ready"
+            and self._prepared is not None
+            and self._prepared.stream_helper_available
+        )
+
+    @property
+    def stream_source_url(self) -> str | None:
+        """Return the loopback-only URL without starting any I/O."""
+        return self._stream_server.url
+
     def async_add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
         """Register a synchronous state listener."""
         self._listeners.add(listener)
@@ -206,6 +246,10 @@ class OwletRuntimeManager:
         """Extract, inspect, verify, then dlopen without contacting a camera."""
         async with self._lock:
             self._raise_if_stopped()
+            if self._stream_requested:
+                raise OwletRuntimeError(
+                    "stream_active", "Stop the live stream before probing the runtime"
+                )
             self._set_status("preparing")
             try:
                 prepared, sdk_key = await self._hass.async_add_executor_job(
@@ -267,6 +311,10 @@ class OwletRuntimeManager:
             if self._prepared is None or self._sdk_key is None:
                 raise OwletRuntimeError(
                     "runtime_not_ready", "Run the runtime probe first"
+                )
+            if self._stream_requested:
+                raise OwletRuntimeError(
+                    "stream_active", "Stop the live stream before running a probe"
                 )
             self._set_status("frame_probe_running")
             try:
@@ -330,6 +378,10 @@ class OwletRuntimeManager:
             if self._prepared is None or self._sdk_key is None:
                 raise OwletRuntimeError(
                     "runtime_not_ready", "Run the runtime probe first"
+                )
+            if self._stream_requested:
+                raise OwletRuntimeError(
+                    "stream_active", "Use the live stream for still images"
                 )
             self._set_status("snapshot_capture_running")
             descriptor = -1
@@ -416,13 +468,162 @@ class OwletRuntimeManager:
                 if descriptor >= 0:
                     await self._hass.async_add_executor_job(os.close, descriptor)
                 if capture_path is not None:
-                    await self._hass.async_add_executor_job(
-                        capture_path.unlink, True
+                    await self._hass.async_add_executor_job(capture_path.unlink, True)
+
+    async def async_get_stream_source(self) -> str:
+        """Start the loopback listener without opening a camera session."""
+        self._raise_if_stopped()
+        if not self.stream_available:
+            raise OwletRuntimeError(
+                "stream_runtime_missing", "The live stream helper is unavailable"
+            )
+        return await self._stream_server.async_start()
+
+    async def async_stop_stream(self) -> None:
+        """Stop the one native producer while leaving snapshots usable."""
+        async with self._stream_lock:
+            self._stream_requested = False
+            self._cancel_idle_disconnect()
+            task = self._stream_task
+            await self._runner.async_stop()
+        if task is not None and task is not asyncio.current_task():
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=7)
+            except TimeoutError:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        self._stream_task = None
+        self.snapshot.stream_active = False
+        self.snapshot.stream_healthy = False
+        self.snapshot.stream_status = "idle"
+        self._notify_listeners()
+
+    async def _async_stream_client_connected(self) -> None:
+        """Start one producer for the first loopback consumer."""
+        async with self._stream_lock:
+            self._raise_if_stopped()
+            if not self.stream_available:
+                raise OwletRuntimeError(
+                    "stream_runtime_missing", "The live stream helper is unavailable"
+                )
+            self._cancel_idle_disconnect()
+            self._stream_requested = True
+            if self._stream_task is None or self._stream_task.done():
+                self._stream_task = self._hass.async_create_background_task(
+                    self._async_stream_loop(),
+                    "Owlet Cam H.264 producer",
+                )
+
+    async def _async_stream_client_disconnected(self) -> None:
+        """Schedule idle teardown after the final local consumer leaves."""
+        if self._keep_warm or self._shutdown:
+            return
+        self._cancel_idle_disconnect()
+        self._idle_disconnect_task = self._hass.async_create_background_task(
+            self._async_idle_disconnect(),
+            "Owlet Cam idle stream disconnect",
+        )
+
+    async def _async_idle_disconnect(self) -> None:
+        try:
+            await asyncio.sleep(self._idle_disconnect_timeout)
+            if self._stream_server.client_count == 0:
+                await self.async_stop_stream()
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if self._idle_disconnect_task is asyncio.current_task():
+                self._idle_disconnect_task = None
+
+    async def _async_stream_loop(self) -> None:
+        attempt = 0
+        while self._stream_requested and not self._shutdown:
+            self.snapshot.stream_status = "connecting" if attempt == 0 else "recovering"
+            self.snapshot.stream_active = False
+            self.snapshot.stream_healthy = False
+            self._notify_listeners()
+            try:
+                prepared = self._prepared
+                sdk_key = self._sdk_key
+                if prepared is None or sdk_key is None:
+                    raise OwletRuntimeError(
+                        "runtime_not_ready", "Run the runtime probe first"
                     )
+                credentials = await self._client.async_get_camera_credentials(
+                    self._camera_identifier
+                )
+                payload = _secret_json_payload(
+                    sdk_key=sdk_key,
+                    uid=credentials.uid,
+                    auth_key=credentials.auth_key,
+                    av_password=credentials.av_password,
+                )
+                del credentials
+                command, environment = self._helper_invocation(
+                    prepared, "stream_capture"
+                )
+                self.snapshot.stream_active = True
+                self._notify_listeners()
+                await self._runner.async_stream(
+                    command,
+                    stdin=payload,
+                    no_frame_timeout=self._no_frame_timeout,
+                    on_frame=self._async_publish_stream_frame,
+                    cwd=prepared.manifest.root,
+                    environment=environment,
+                )
+                if not self._stream_requested:
+                    break
+                raise OwletRuntimeError(
+                    "stream_helper_stopped", "The live stream helper stopped"
+                )
+            except asyncio.CancelledError:
+                raise
+            except OwletCamError as err:
+                self.snapshot.last_error_code = _cloud_error_code(err)
+            except (OwletHelperProcessError, OwletRuntimeError):
+                self.snapshot.last_error_code = "stream_recovery_failed"
+            finally:
+                self.snapshot.stream_active = False
+                self.snapshot.stream_healthy = False
+                self._notify_listeners()
+            if not self._stream_requested or self._shutdown:
+                break
+            self.snapshot.stream_reconnect_count += 1
+            attempt += 1
+            delay = min(
+                self._reconnect_backoff * (2 ** min(attempt - 1, 8)),
+                _MAX_RECONNECT_BACKOFF,
+            )
+            if delay:
+                await asyncio.sleep(delay)
+        self.snapshot.stream_status = "idle"
+        self.snapshot.stream_active = False
+        self.snapshot.stream_healthy = False
+        self._notify_listeners()
+
+    async def _async_publish_stream_frame(self, frame: bytes) -> None:
+        was_healthy = self.snapshot.stream_healthy
+        await self._stream_server.async_publish(frame)
+        self.snapshot.stream_frames += 1
+        self.snapshot.stream_healthy = self._stream_server.healthy
+        if self.snapshot.stream_healthy:
+            self.snapshot.stream_status = "streaming"
+            self.snapshot.last_error_code = None
+        if self.snapshot.stream_healthy != was_healthy:
+            self._notify_listeners()
+
+    def _cancel_idle_disconnect(self) -> None:
+        task = self._idle_disconnect_task
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+        self._idle_disconnect_task = None
+
     async def async_shutdown(self) -> None:
         """Stop children, scrub SDK material, and release runtime state."""
         self._shutdown = True
-        await self._runner.async_stop()
+        await self.async_stop_stream()
+        await self._stream_server.async_stop()
         self._replace_sdk_key(None)
         self._prepared = None
         self.snapshot.libraries_compatible = None
@@ -458,6 +659,15 @@ class OwletRuntimeManager:
                 and self.snapshot.last_snapshot_height is not None
                 else None
             ),
+            "stream": {
+                "status": self.snapshot.stream_status,
+                "active": self.snapshot.stream_active,
+                "healthy": self.snapshot.stream_healthy,
+                "frames": self.snapshot.stream_frames,
+                "reconnect_count": self.snapshot.stream_reconnect_count,
+                "consumers": self._stream_server.client_count,
+                "binding": "127.0.0.1" if self._stream_server.url else None,
+            },
         }
 
     def _prepare_sync(self) -> tuple[PreparedRuntime, bytearray]:
@@ -495,6 +705,9 @@ class OwletRuntimeManager:
                     library_directory=final_library_directory,
                     libraries=reports,
                     source_sha256=extracted.source_sha256,
+                    stream_helper_available=(
+                        "bin/stream_capture" in runtime_manifest.files
+                    ),
                 ),
                 bytearray(extracted.sdk_key),
             )
@@ -531,6 +744,9 @@ class OwletRuntimeManager:
 
     def _set_status(self, status: str) -> None:
         self.snapshot.status = status
+        self._notify_listeners()
+
+    def _notify_listeners(self) -> None:
         for listener in tuple(self._listeners):
             listener()
 
@@ -566,9 +782,7 @@ def _remove_stale_extractions(directory: Path) -> None:
     """Remove only extraction directories owned by a previous Core process."""
     current_prefix = f"extract-{_PROCESS_SESSION}-"
     for path in directory.iterdir():
-        if not path.name.startswith("extract-") or path.name.startswith(
-            current_prefix
-        ):
+        if not path.name.startswith("extract-") or path.name.startswith(current_prefix):
             continue
         if path.is_symlink() or not path.is_dir():
             path.unlink(missing_ok=True)
@@ -642,7 +856,12 @@ def _verify_runtime(root: Path) -> RuntimeManifest:
             raise OwletRuntimeError(
                 "runtime_checksum_mismatch", "Helper runtime checksum failed"
             )
-    return RuntimeManifest(version=version, architecture=architecture, root=root)
+    return RuntimeManifest(
+        version=version,
+        architecture=architecture,
+        root=root,
+        files=frozenset(files),
+    )
 
 
 def _verify_regular_file(path: Path, root: Path) -> None:

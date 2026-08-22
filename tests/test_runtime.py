@@ -14,6 +14,7 @@ import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlsplit
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -540,6 +541,62 @@ async def test_process_runner_passes_only_explicit_media_descriptor(
             os.close(write_descriptor)
 
 
+async def test_process_runner_streams_length_framed_media_and_scrubs_stdin(
+    tmp_path: Path,
+) -> None:
+    runner = OwletHelperProcessRunner()
+    payload = bytearray(b"fixture-secret\n")
+    received: list[bytes] = []
+
+    async def receive(frame: bytes) -> None:
+        received.append(frame)
+
+    command = (
+        sys.executable,
+        "-c",
+        "import sys; sys.stdin.buffer.read(); data=b'\\x00\\x00\\x00\\x01\\x65frame'; "
+        "sys.stdout.buffer.write(len(data).to_bytes(4,'big')+data); "
+        "sys.stdout.buffer.flush(); sys.stderr.buffer.write(b'{\\\"ok\\\":true}\\n')",
+    )
+
+    status = await runner.async_stream(
+        command,
+        stdin=payload,
+        no_frame_timeout=5,
+        on_frame=receive,
+        cwd=tmp_path,
+    )
+
+    assert received == [b"\x00\x00\x00\x01\x65frame"]
+    assert status == b'{"ok":true}\n'
+    assert payload == bytearray(len(payload))
+    assert not runner.running
+
+
+async def test_process_runner_terminates_stream_after_no_frame_timeout(
+    tmp_path: Path,
+) -> None:
+    runner = OwletHelperProcessRunner()
+    payload = bytearray(b"fixture-secret\n")
+    command = (
+        sys.executable,
+        "-c",
+        "import sys,time; sys.stdin.buffer.read(); time.sleep(10)",
+    )
+
+    with pytest.raises(OwletHelperProcessError, match="no media frames"):
+        await runner.async_stream(
+            command,
+            stdin=payload,
+            no_frame_timeout=0.01,
+            on_frame=AsyncMock(),
+            cwd=tmp_path,
+        )
+
+    assert payload == bytearray(len(payload))
+    assert not runner.running
+
+
 def _library_probe_output() -> bytes:
     libraries = (
         "libAVAPIs.so",
@@ -767,6 +824,7 @@ async def test_runtime_manager_captures_decodes_and_deletes_private_gop(
     manager._prepared = prepared
     manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
     manager.snapshot.libraries_compatible = True
+    manager.snapshot.status = "ready"
     capture_path: Path | None = None
 
     async def decode(path: Path) -> bytes:
@@ -822,12 +880,11 @@ async def test_runtime_manager_rejects_missing_snapshot_output_and_cleans_file(
     )
     manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
     manager.snapshot.libraries_compatible = True
-    manager._client.async_get_camera_credentials.return_value = (
-        OwletCameraCredentials(
-            uid="fixture-uid",
-            auth_key="fixture-auth-key",
-            av_password="fixture-av-password",  # noqa: S106
-        )
+    manager.snapshot.status = "ready"
+    manager._client.async_get_camera_credentials.return_value = OwletCameraCredentials(
+        uid="fixture-uid",
+        auth_key="fixture-auth-key",
+        av_password="fixture-av-password",  # noqa: S106
     )
     manager._runner.async_run.return_value = HelperProcessResult(
         returncode=0, stdout=_snapshot_capture_output(100)
@@ -944,7 +1001,213 @@ async def test_snapshot_decode_timeout_is_safe_and_retryable(
     assert manager.snapshot.last_error_code == "snapshot_decode_timeout"
     assert manager.snapshot.status == "ready"
     assert manager.snapshot_available
+
+
+async def test_runtime_manager_fans_out_one_live_camera_session_and_idles(
+    hass: HomeAssistant, tmp_path: Path, socket_enabled: None
+) -> None:
+    runtime_root = tmp_path / "runtime" / "current"
+    _runtime_tree(runtime_root)
+    release = asyncio.Event()
+    started = asyncio.Event()
+    runner = AsyncMock(spec=OwletHelperProcessRunner)
+
+    async def stream_helper(*_args: object, **kwargs: object) -> bytes:
+        started.set()
+        on_frame = kwargs["on_frame"]
+        await on_frame(
+            b"\x00\x00\x00\x01\x67sps\x00\x00\x01\x68pps\x00\x00\x00\x01\x65idr"
+        )
+        await release.wait()
+        return b'{"event":"stream_capture","ok":true}\n'
+
+    async def stop_helper() -> None:
+        release.set()
+
+    runner.async_stream.side_effect = stream_helper
+    runner.async_stop.side_effect = stop_helper
+    client = AsyncMock(spec=OwletCloudClient)
+    client.async_get_camera_credentials.return_value = OwletCameraCredentials(
+        uid="fixture-uid",
+        auth_key="fixture-auth-key",
+        av_password="fixture-av-password",  # noqa: S106
+    )
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=client,
+        camera_identifier="OCD123456789",
+        runner=runner,
+        idle_disconnect_timeout=0,
+        reconnect_backoff=0,
+    )
+    manager._prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.6.0-test",
+            architecture="aarch64",
+            root=runtime_root,
+            files=frozenset({"bin/stream_capture"}),
+        ),
+        library_directory=tmp_path / "extracted",
+        libraries=(),
+        source_sha256="0" * 64,
+        stream_helper_available=True,
+    )
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+    manager.snapshot.status = "ready"
+    healthy = asyncio.Event()
+    idle = asyncio.Event()
+
+    def state_changed() -> None:
+        if manager.snapshot.stream_healthy:
+            healthy.set()
+        if manager.snapshot.stream_status == "idle":
+            idle.set()
+
+    manager.async_add_listener(state_changed)
+
+    url = await manager.async_get_stream_source()
+    parsed = urlsplit(url)
+    assert parsed.hostname == "127.0.0.1"
+    first_reader, first_writer = await asyncio.open_connection("127.0.0.1", parsed.port)
+    request = f"GET {parsed.path} HTTP/1.1\r\nHost: localhost\r\n\r\n".encode()
+    first_writer.write(request)
+    await first_writer.drain()
+    assert b"200 OK" in await first_reader.readuntil(b"\r\n\r\n")
+    async with asyncio.timeout(1):
+        await started.wait()
+        await healthy.wait()
+
+    second_reader, second_writer = await asyncio.open_connection(
+        "127.0.0.1", parsed.port
+    )
+    second_writer.write(request)
+    await second_writer.drain()
+    assert b"200 OK" in await second_reader.readuntil(b"\r\n\r\n")
+    assert manager.snapshot.stream_status == "streaming"
+    assert runner.async_stream.await_count == 1
+    assert client.async_get_camera_credentials.await_count == 1
+
+    diagnostics = json.dumps(manager.diagnostics())
+    assert "127.0.0.1" in diagnostics
+    assert parsed.path not in diagnostics
+    for secret in (
+        "fixture-uid",
+        "fixture-auth-key",
+        "fixture-av-password",
+        manager._sdk_key.decode(),
+    ):
+        assert secret not in diagnostics
+
+    first_writer.close()
+    second_writer.close()
+    await first_writer.wait_closed()
+    await second_writer.wait_closed()
+    async with asyncio.timeout(2):
+        await idle.wait()
+    assert not manager.snapshot.stream_active
+    assert not manager.snapshot.stream_healthy
+    runner.async_stop.assert_awaited_once()
+
+    await manager.async_shutdown()
+    assert manager.stream_source_url is None
+
+
+async def test_live_stream_requires_the_versioned_stream_helper(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path,
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+    )
+    manager._prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.5.0-test", architecture="aarch64", root=tmp_path
+        ),
+        library_directory=tmp_path,
+        libraries=(),
+        source_sha256="0" * 64,
+    )
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+    manager.snapshot.status = "ready"
+
+    assert manager.snapshot_available
+    assert not manager.stream_available
+    with pytest.raises(OwletRuntimeError) as caught:
+        await manager.async_get_stream_source()
+    assert caught.value.code == "stream_runtime_missing"
+    await manager.async_shutdown()
     assert not list((tmp_path / "userfiles" / "tmp").glob("snapshot-*.h264"))
+
+
+async def test_live_stream_recovers_after_helper_failure_with_fresh_credentials(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    runtime_root = tmp_path / "runtime" / "current"
+    _runtime_tree(runtime_root)
+    release = asyncio.Event()
+    healthy = asyncio.Event()
+    runner = AsyncMock(spec=OwletHelperProcessRunner)
+    attempts = 0
+
+    async def recovered_stream(*_args: object, **kwargs: object) -> bytes:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OwletHelperProcessError("Native stream helper failed")
+        await kwargs["on_frame"](
+            b"\x00\x00\x00\x01\x67sps\x00\x00\x01\x68pps\x00\x00\x00\x01\x65idr"
+        )
+        healthy.set()
+        await release.wait()
+        return b'{"event":"stream_capture","ok":true}\n'
+
+    runner.async_stream.side_effect = recovered_stream
+    runner.async_stop.side_effect = lambda: release.set()
+    client = AsyncMock(spec=OwletCloudClient)
+    client.async_get_camera_credentials.return_value = OwletCameraCredentials(
+        uid="fixture-uid",
+        auth_key="fixture-auth-key",
+        av_password="fixture-av-password",  # noqa: S106
+    )
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=client,
+        camera_identifier="OCD123456789",
+        runner=runner,
+        reconnect_backoff=0,
+    )
+    manager._prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.6.0-test", architecture="aarch64", root=runtime_root
+        ),
+        library_directory=tmp_path / "extracted",
+        libraries=(),
+        source_sha256="0" * 64,
+        stream_helper_available=True,
+    )
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+    manager.snapshot.status = "ready"
+
+    await manager._async_stream_client_connected()
+    async with asyncio.timeout(1):
+        await healthy.wait()
+
+    assert runner.async_stream.await_count == 2
+    assert client.async_get_camera_credentials.await_count == 2
+    assert manager.snapshot.stream_reconnect_count == 1
+    assert manager.snapshot.stream_healthy
+    assert manager.snapshot.last_error_code is None
+
+    await manager.async_stop_stream()
+    assert manager.snapshot.stream_status == "idle"
+    await manager.async_shutdown()
 
 
 async def test_frame_probe_cloud_failure_has_safe_error_state(
@@ -1084,10 +1347,12 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
         path.write_bytes(f"open-source-{relative}".encode())
     frame_probe = tmp_path / "frame_probe"
     snapshot_capture = tmp_path / "snapshot_capture"
+    stream_capture = tmp_path / "stream_capture"
     library_probe = tmp_path / "probe_libraries"
     notice = tmp_path / "NOTICE.html.gz"
     frame_probe.write_bytes(b"clean-room-frame-helper")
     snapshot_capture.write_bytes(b"clean-room-snapshot-helper")
+    stream_capture.write_bytes(b"clean-room-stream-helper")
     library_probe.write_bytes(b"clean-room-library-helper")
     notice.write_bytes(b"open-source-notices")
     first = tmp_path / "first.tar.gz"
@@ -1096,6 +1361,7 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
     first_hash = build_runtime_archive(
         frame_probe=frame_probe,
         snapshot_capture=snapshot_capture,
+        stream_capture=stream_capture,
         library_probe=library_probe,
         runtime_root=runtime,
         aosp_notice=notice,
@@ -1104,6 +1370,7 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
     second_hash = build_runtime_archive(
         frame_probe=frame_probe,
         snapshot_capture=snapshot_capture,
+        stream_capture=stream_capture,
         library_probe=library_probe,
         runtime_root=runtime,
         aosp_notice=notice,
@@ -1133,7 +1400,7 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
         runtime_parent=tmp_path / "runtime-install",
     )
     assert installed.root.name == "current"
-    assert installed.version == "0.5.0-dev"
+    assert installed.version == "0.6.0-dev"
 
 
 def test_runtime_installer_rejects_bad_checksum_and_traversal(tmp_path: Path) -> None:

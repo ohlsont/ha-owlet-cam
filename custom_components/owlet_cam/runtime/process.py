@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -13,6 +13,7 @@ from typing import Final
 from .protocol import MAX_HELPER_OUTPUT
 
 _TERMINATE_TIMEOUT: Final = 5.0
+_MAX_STREAM_FRAME: Final = 4 * 1024 * 1024
 
 
 class OwletHelperProcessError(RuntimeError):
@@ -110,6 +111,97 @@ class OwletHelperProcessRunner:
             finally:
                 if stdin is not None:
                     stdin[:] = b"\0" * len(stdin)
+                self._process = None
+
+    async def async_stream(
+        self,
+        command: Sequence[str | Path],
+        *,
+        stdin: bytearray,
+        no_frame_timeout: float,
+        on_frame: Callable[[bytes], Awaitable[None]],
+        cwd: Path | None = None,
+        environment: Mapping[str, str] | None = None,
+    ) -> bytes:
+        """Run one streaming helper until it exits or is stopped.
+
+        The helper's stdout is a sequence of unsigned big-endian frame lengths
+        followed by Annex-B H.264 access units. Its stderr is reserved for one
+        bounded, redacted JSON status event.
+        """
+        if no_frame_timeout <= 0 or not command:
+            raise ValueError("Invalid helper stream configuration")
+        arguments = tuple(str(part) for part in command)
+        async with self._lock:
+            stderr_task: asyncio.Task[bytes] | None = None
+            try:
+                self._process = await asyncio.create_subprocess_exec(
+                    *arguments,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                    env={
+                        "PATH": "/usr/bin:/bin",
+                        "LANG": "C",
+                        **(environment or {}),
+                    },
+                    start_new_session=True,
+                )
+                process = self._process
+                if (
+                    process.stdin is None
+                    or process.stdout is None
+                    or process.stderr is None
+                ):
+                    raise OwletHelperProcessError("Native helper pipes are unavailable")
+                stderr_task = asyncio.create_task(_read_limited(process.stderr))
+                process.stdin.write(stdin)
+                await process.stdin.drain()
+                process.stdin.close()
+                try:
+                    await process.stdin.wait_closed()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+                while True:
+                    try:
+                        async with asyncio.timeout(no_frame_timeout):
+                            header = await process.stdout.readexactly(4)
+                            size = int.from_bytes(header, "big")
+                            if size < 1 or size > _MAX_STREAM_FRAME:
+                                raise OwletHelperProcessError(
+                                    "Native helper emitted an invalid media frame"
+                                )
+                            frame = await process.stdout.readexactly(size)
+                    except asyncio.IncompleteReadError:
+                        break
+                    except TimeoutError as err:
+                        raise OwletHelperProcessError(
+                            "Native helper produced no media frames"
+                        ) from err
+                    await on_frame(frame)
+
+                returncode = await process.wait()
+                stderr = await stderr_task
+                if returncode != 0:
+                    raise OwletHelperProcessError("Native stream helper failed")
+                return stderr
+            except asyncio.CancelledError:
+                if self._process is not None:
+                    await self._async_terminate_process(self._process)
+                raise
+            except (OSError, ValueError) as err:
+                raise OwletHelperProcessError(
+                    "Native helper could not be started"
+                ) from err
+            finally:
+                stdin[:] = b"\0" * len(stdin)
+                if self._process is not None and self._process.returncode is None:
+                    await self._async_terminate_process(self._process)
+                if stderr_task is not None and not stderr_task.done():
+                    stderr_task.cancel()
+                    await asyncio.gather(stderr_task, return_exceptions=True)
                 self._process = None
 
     async def async_stop(self) -> None:

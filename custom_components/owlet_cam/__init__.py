@@ -13,10 +13,18 @@ from .const import (
     CONF_CAMERA_DSN,
     CONF_CAMERA_NAME,
     CONF_EMAIL,
+    CONF_IDLE_TIMEOUT,
+    CONF_KEEP_WARM,
     CONF_MODE,
+    CONF_NO_FRAME_TIMEOUT,
     CONF_PASSWORD,
+    CONF_RECONNECT_BACKOFF,
     CONF_REGION,
     CONF_UPDATE_INTERVAL,
+    DEFAULT_IDLE_TIMEOUT,
+    DEFAULT_KEEP_WARM,
+    DEFAULT_NO_FRAME_TIMEOUT,
+    DEFAULT_RECONNECT_BACKOFF,
     DEFAULT_UPDATE_INTERVAL,
     MODE_EMBEDDED,
     PLATFORMS,
@@ -60,6 +68,16 @@ async def async_setup_entry(
             root=Path(hass.config.path("custom_components", "owlet_cam", "userfiles")),
             client=client,
             camera_identifier=dsn,
+            keep_warm=entry.options.get(CONF_KEEP_WARM, DEFAULT_KEEP_WARM),
+            idle_disconnect_timeout=entry.options.get(
+                CONF_IDLE_TIMEOUT, DEFAULT_IDLE_TIMEOUT
+            ),
+            no_frame_timeout=entry.options.get(
+                CONF_NO_FRAME_TIMEOUT, DEFAULT_NO_FRAME_TIMEOUT
+            ),
+            reconnect_backoff=entry.options.get(
+                CONF_RECONNECT_BACKOFF, DEFAULT_RECONNECT_BACKOFF
+            ),
         )
     else:
         coordinator = OwletCamCoordinator(hass)
