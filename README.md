@@ -26,8 +26,11 @@ authenticated successfully against the user-confirmed EMEA project. The
 region-specific KMS request then returned HTTP 403 for the configured camera
 identifier, so no camera credentials were returned and no camera model has been
 tested. The identifier was confirmed from Dream's device information and the
-same account can view the camera in Dream; the remaining blocker is KMS
-authorization or server-side device mapping, not a known input-format error.
+same primary account originally paired and can view the camera in Dream. An
+EMEA SSO session plus Firebase token refresh also succeeded before KMS again
+returned 403. The remaining blocker is an undocumented KMS authorization or
+server-side device-mapping dependency, not a known input-format, stale-token,
+or shared-caregiver error.
 The user has deferred publishing the GitHub/HACS repository until core
 functionality is further along, so Yellow validation is still unperformed.
 

@@ -43,6 +43,9 @@ All notable changes are documented here. Versions follow semantic versioning.
 - Confirmed the identifier comes from Dream device information and the same
   account can view the camera. Raw and Bearer token formats plus APK-observed
   generic request headers all produced the same redacted KMS 403 result.
+- Confirmed the account originally paired the user-reported Cam 1. EMEA Owlet
+  SSO returned 200, but KMS still returned 403 after a Firebase token refresh;
+  no account or camera secret was emitted.
 
 ## [0.1.0] - Unreleased
 

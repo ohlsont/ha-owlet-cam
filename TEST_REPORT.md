@@ -6,7 +6,7 @@ or real-system evidence.
 | Milestone | Commit | Integration version | Home Assistant version | Home Assistant OS version | Architecture | Camera model | Camera firmware | Automated tests | Yellow test | Real camera test | Result | Evidence | Unperformed tests | Known issues |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 — HACS scaffold and lifecycle | `67fae5f` | 0.1.0 | 2026.8.2 current; 2024.5.0 minimum at that milestone | HAOS 18.2 identified through authenticated read-only HA-MCP health evidence | AArch64 Home Assistant Yellow identified; integration not installed | None | None | **Passed locally:** original 6-test lifecycle suite; later Milestone 1 suite continues to cover lifecycle | Unperformed | Not applicable | **Automated gate passed; public HACS installation deferred by user** | Local commands and read-only system-health evidence on 2026-08-21 | HACS Action, Hassfest in GitHub context, and the ten physical install/lifecycle/log checks | Public repository intentionally deferred until core functionality works |
-| 1 — Cloud authentication and KMS | `probe/local-video` working tree | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 target identified; integration not installed | AArch64 Yellow target; tests executed on arm64 macOS | Not established | Not established | **Passed locally:** 85 tests at 90.29% branch-aware coverage; Ruff, mypy, secret and release checks passed | Unperformed | Unperformed | **EMEA authentication passed locally; KMS gate failed with HTTP 403** | The exact identifier was confirmed from Dream device information and the same account can view its stream. The clean-room probe authenticated with the signed Dream app identity and reached `camera-kms.eu.owletdata.com`; raw-token, Bearer-token, and APK-observed generic-header trials all returned 403 without camera credentials | Successful KMS lookup, diagnostics/log search, wrong-password correction on Yellow, camera connection and all media tests | KMS denies this account/device combination despite the official app having access; account ownership/entitlement or a server-side device mapping remains unresolved |
+| 1 — Cloud authentication and KMS | `probe/local-video` working tree | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 target identified; integration not installed | AArch64 Yellow target; tests executed on arm64 macOS | Owlet Cam 1, user-reported; not hardware-verified | Not established | **Passed locally:** 85 tests at 90.29% branch-aware coverage; Ruff, mypy, secret and release checks passed | Unperformed | Unperformed | **EMEA authentication passed locally; KMS gate failed with HTTP 403** | The exact identifier was confirmed from Dream device information, the same primary account originally paired the camera and can view its stream, and EMEA SSO returned 200. Raw-token, Bearer-token, APK-observed generic-header, and post-SSO refreshed-token KMS trials all returned 403 without camera credentials | Successful KMS lookup, diagnostics/log search, wrong-password correction on Yellow, physical model verification, camera connection and all media tests | KMS denies this primary account/device combination despite the official app having access; a server-side device mapping or undocumented authorization dependency remains unresolved |
 | 2 — External bridge | — | — | — | — | — | — | — | Unperformed | Unperformed | Unperformed | Not started | — | All | Blocked by Milestone 0 gate |
 | 3–8 — Embedded runtime through stable release | `probe/local-video` working tree | 0.2.0 base; no embedded release | Not applicable to local spike | Not applicable to local spike | ARM64 macOS host; Linux/ARM64 Docker target | Not established | Not established | **Partial feasibility evidence:** 17 focused archive/ELF tests; full suite 85 passed at 90.29% coverage; Ruff, mypy, release and secret checks passed | Unperformed | Unperformed | **Local extraction and Bionic load sub-gates passed; no embedded milestone gate passed** | Local commands on 2026-08-21; exact redacted results below | Successful KMS handoff, camera connection, frames, FFprobe, in-Core Yellow runtime/lifecycle | User explicitly prioritized proving real local video before Home Assistant installation; previous stable work remains on `build/milestone-1` |
 
@@ -119,11 +119,16 @@ or stream claim is made by this report.
   KMS-specific App Check or secondary authorization value. Raw-token,
   Bearer-token, and app/version user-agent plus `Accept-Language` trials all
   returned the same safe result: HTTP 403 `camera_forbidden`.
+- The user identified the hardware as probably Owlet Cam 1 and confirmed this
+  is the primary account that originally paired it, not an invited caregiver
+  account. A final redacted trial established an EMEA Owlet SSO session (HTTP
+  200), refreshed the Firebase token, and retried KMS. KMS again returned HTTP
+  403. This rules out a stale initial token or an uninitialized normal SSO
+  session; no SSO or Firebase token value was printed or retained.
 - **Acceptance gate: failed at KMS.** Real EMEA authentication is now proven
   locally, but camera metadata lookup did not succeed. Native camera connection
-  and frame work must not begin. The unresolved boundary is server-side
-  authorization/device mapping or whether this login is the primary camera
-  owner rather than a shared caregiver account.
+  and frame work must not begin. The unresolved boundary is server-side device
+  mapping or another undocumented authorization dependency.
 - `.venv/bin/ruff format --check .`, `.venv/bin/ruff check .`, and
   `.venv/bin/mypy custom_components scripts`: passed.
 - `scripts/validate_release.py`, `scripts/check_secrets.py`, repository JSON,
