@@ -89,6 +89,8 @@ async def async_setup_entry(
         cameras=cameras,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if runtime_manager is not None:
+        runtime_manager.async_schedule_previous_validation_restore()
     return True
 
 
@@ -98,8 +100,6 @@ async def async_unload_entry(
 ) -> bool:
     """Unload Owlet Cam and all forwarded platforms."""
     runtime_manager = entry.runtime_data.runtime_manager
-    if runtime_manager is not None:
-        await runtime_manager.async_shutdown()
     registry = er.async_get(hass)
     entity_ids = [
         registry_entry.entity_id
@@ -109,6 +109,8 @@ async def async_unload_entry(
     ]
     unloaded = bool(await hass.config_entries.async_unload_platforms(entry, PLATFORMS))
     if unloaded:
+        if runtime_manager is not None:
+            await runtime_manager.async_shutdown()
         # Current Home Assistant may restore an unavailable state for a
         # registry entity after platform unload. The milestone contract is
         # stricter: an unloaded Owlet Cam entry owns no state-machine entities.

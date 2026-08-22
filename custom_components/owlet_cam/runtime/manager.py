@@ -17,7 +17,8 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import CoreState, Event, HomeAssistant, callback
 
 from ..api.cloud import OwletCloudClient
 from ..api.exceptions import (
@@ -52,8 +53,12 @@ RUNTIME_LAYOUT_VERSION: Final = 1
 RUNTIME_MANIFEST: Final = "runtime-manifest.json"
 RUNTIME_CURRENT: Final = "current"
 SUPPORTED_MACHINE: Final = "aarch64"
+_VALIDATION_MARKER: Final = "native-validation-consent.json"
+_VALIDATION_MARKER_CONTENT: Final = (
+    b'{"prior_explicit_runtime_validation":true,"schema_version":1}\n'
+)
 _FRAME_PROBE_TIMEOUT: Final = 75.0
-_LIBRARY_PROBE_TIMEOUT: Final = 20.0
+_LIBRARY_PROBE_TIMEOUT: Final = 30.0
 _SNAPSHOT_CAPTURE_TIMEOUT: Final = 30.0
 _MAX_RECONNECT_BACKOFF: Final = 300.0
 _PROCESS_SESSION: Final = secrets.token_hex(8)
@@ -197,6 +202,7 @@ class OwletRuntimeManager:
         self._stream_requested = False
         self._stream_task: asyncio.Task[None] | None = None
         self._idle_disconnect_task: asyncio.Task[None] | None = None
+        self._restore_task: asyncio.Task[None] | None = None
         self._stream_server = H264LoopbackServer(
             on_first_client=self._async_stream_client_connected,
             on_last_client=self._async_stream_client_disconnected,
@@ -275,6 +281,11 @@ class OwletRuntimeManager:
                 self.snapshot.helper_version = prepared.manifest.version
                 self.snapshot.libraries_compatible = probe.compatible
                 self.snapshot.last_error_code = None
+                if probe.compatible:
+                    await self._hass.async_add_executor_job(
+                        _write_validation_marker,
+                        self._root / "state" / _VALIDATION_MARKER,
+                    )
                 self._set_status("ready")
                 return probe
             except OwletRuntimeError as err:
@@ -479,6 +490,51 @@ class OwletRuntimeManager:
             )
         return await self._stream_server.async_start()
 
+    def async_schedule_previous_validation_restore(self) -> None:
+        """Restore a runtime only after an earlier explicit probe consented."""
+        if self._restore_task is not None or self._shutdown:
+            return
+        self._restore_task = self._hass.async_create_background_task(
+            self._async_restore_previous_validation(),
+            "Owlet Cam validated runtime restore",
+        )
+
+    async def _async_restore_previous_validation(self) -> None:
+        try:
+            marker = self._root / "state" / _VALIDATION_MARKER
+            previously_validated = await self._hass.async_add_executor_job(
+                _has_validation_marker, marker
+            )
+            if not previously_validated or self._shutdown:
+                return
+            await self._async_wait_until_home_assistant_started()
+            await self.async_prepare_and_probe_libraries()
+        except OwletRuntimeError:
+            # The manager has already retained a redacted, entity-safe error.
+            return
+        finally:
+            if self._restore_task is asyncio.current_task():
+                self._restore_task = None
+
+    async def _async_wait_until_home_assistant_started(self) -> None:
+        """Avoid competing with Core startup for constrained Yellow resources."""
+        if self._hass.state is CoreState.running:
+            return
+        started = asyncio.Event()
+
+        @callback
+        def async_mark_started(_event: Event[Any]) -> None:
+            started.set()
+
+        remove_listener = self._hass.bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STARTED, async_mark_started
+        )
+        try:
+            if self._hass.state is not CoreState.running:
+                await started.wait()
+        finally:
+            remove_listener()
+
     async def async_stop_stream(self) -> None:
         """Stop the one native producer while leaving snapshots usable."""
         async with self._stream_lock:
@@ -623,6 +679,10 @@ class OwletRuntimeManager:
         """Stop children, scrub SDK material, and release runtime state."""
         self._shutdown = True
         await self.async_stop_stream()
+        restore_task = self._restore_task
+        if restore_task is not None and restore_task is not asyncio.current_task():
+            restore_task.cancel()
+            await asyncio.gather(restore_task, return_exceptions=True)
         await self._stream_server.async_stop()
         self._replace_sdk_key(None)
         self._prepared = None
@@ -776,6 +836,56 @@ def _prepare_directories(root: Path) -> None:
         path.mkdir(mode=0o700, exist_ok=True)
         path.chmod(0o700)
     _remove_stale_extractions(root / "tmp")
+
+
+def _has_validation_marker(path: Path) -> bool:
+    """Return whether an exact private marker records prior explicit consent."""
+    try:
+        metadata = path.lstat()
+        if (
+            path.is_symlink()
+            or not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) & 0o077
+            or metadata.st_size != len(_VALIDATION_MARKER_CONTENT)
+        ):
+            return False
+        return path.read_bytes() == _VALIDATION_MARKER_CONTENT
+    except OSError:
+        return False
+
+
+def _write_validation_marker(path: Path) -> None:
+    """Atomically persist only the fact of a successful explicit native gate."""
+    temporary_path: Path | None = None
+    descriptor = -1
+    try:
+        path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        path.parent.chmod(0o700)
+        descriptor, raw_path = tempfile.mkstemp(
+            prefix=".native-validation-", dir=path.parent
+        )
+        temporary_path = Path(raw_path)
+        os.fchmod(descriptor, 0o600)
+        remaining = memoryview(_VALIDATION_MARKER_CONTENT)
+        while remaining:
+            written = os.write(descriptor, remaining)
+            if written <= 0:
+                raise OSError("Validation marker write did not make progress")
+            remaining = remaining[written:]
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(temporary_path, path)
+        temporary_path = None
+    except OSError as err:
+        raise OwletRuntimeError(
+            "runtime_state_write_failed", "Runtime validation state could not be saved"
+        ) from err
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def _remove_stale_extractions(directory: Path) -> None:

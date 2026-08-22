@@ -108,7 +108,14 @@ async def test_embedded_setup_unload_and_reload(hass: HomeAssistant) -> None:
     """Embedded setup reloads cloud and runtime entities without duplicates."""
     entry = _embedded_entry()
     entry.add_to_hass(hass)
-    with patch("custom_components.owlet_cam.OwletCloudClient") as client_class:
+    with (
+        patch("custom_components.owlet_cam.OwletCloudClient") as client_class,
+        patch(
+            "custom_components.owlet_cam.OwletRuntimeManager."
+            "async_schedule_previous_validation_restore",
+            autospec=True,
+        ) as schedule_restore,
+    ):
         validate = AsyncMock(return_value=_metadata())
         client_class.return_value.async_validate_configured_camera = validate
 
@@ -135,6 +142,7 @@ async def test_embedded_setup_unload_and_reload(hass: HomeAssistant) -> None:
     assert not hass.states.async_entity_ids("sensor")
     assert not hass.states.async_entity_ids("camera")
     assert validate.await_count == 2
+    assert schedule_restore.call_count == 2
 
 
 async def test_temporary_outage_uses_setup_retry(hass: HomeAssistant) -> None:

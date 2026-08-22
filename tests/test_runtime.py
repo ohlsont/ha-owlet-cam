@@ -17,7 +17,8 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import urlsplit
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import CoreState, HomeAssistant
 
 from custom_components.owlet_cam.api.cloud import OwletCloudClient
 from custom_components.owlet_cam.api.exceptions import (
@@ -40,12 +41,15 @@ from custom_components.owlet_cam.runtime.elf import (
 )
 from custom_components.owlet_cam.runtime.manager import (
     _PROCESS_SESSION,
+    _VALIDATION_MARKER,
     OwletRuntimeError,
     OwletRuntimeManager,
     PreparedRuntime,
     RuntimeManifest,
+    _has_validation_marker,
     _prepare_directories,
     _verify_runtime,
+    _write_validation_marker,
 )
 from custom_components.owlet_cam.runtime.process import (
     HelperProcessResult,
@@ -744,6 +748,9 @@ async def test_runtime_manager_runs_gates_and_scrubs_on_unload(
     assert libraries.compatible
     assert manager.frame_probe_available
     assert frame.frames == 100
+    marker = tmp_path / "userfiles" / "state" / _VALIDATION_MARKER
+    assert _has_validation_marker(marker)
+    assert marker.stat().st_mode & 0o777 == 0o600
     assert frame.width == 1920
     for call in runner.async_run.await_args_list:
         command = call.args[0]
@@ -766,6 +773,81 @@ async def test_runtime_manager_runs_gates_and_scrubs_on_unload(
     assert sdk_key == bytearray(len(sdk_key))
     assert manager.snapshot.status == "stopped"
     assert not manager.frame_probe_available
+
+
+async def test_runtime_restore_requires_prior_explicit_validation(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """Only an exact private consent marker enables automatic revalidation."""
+    root = tmp_path / "userfiles"
+    manager = OwletRuntimeManager(
+        hass,
+        root=root,
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+    )
+    with patch.object(
+        manager, "async_prepare_and_probe_libraries", new_callable=AsyncMock
+    ) as restore:
+        manager.async_schedule_previous_validation_restore()
+        restore_task = manager._restore_task
+        assert restore_task is not None
+        await restore_task
+    restore.assert_not_awaited()
+
+    marker = root / "state" / _VALIDATION_MARKER
+    _write_validation_marker(marker)
+    assert _has_validation_marker(marker)
+    marker.write_bytes(b'{"prior_explicit_runtime_validation":false}\n')
+    assert not _has_validation_marker(marker)
+    _write_validation_marker(marker)
+
+    restored_manager = OwletRuntimeManager(
+        hass,
+        root=root,
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+    )
+    with patch.object(
+        restored_manager,
+        "async_prepare_and_probe_libraries",
+        new_callable=AsyncMock,
+    ) as restore:
+        hass.set_state(CoreState.running)
+        restored_manager.async_schedule_previous_validation_restore()
+        restore_task = restored_manager._restore_task
+        assert restore_task is not None
+        await restore_task
+    restore.assert_awaited_once_with()
+
+
+async def test_runtime_restore_waits_for_home_assistant_start(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """Cold-start revalidation waits until constrained Core startup settles."""
+    root = tmp_path / "userfiles"
+    _write_validation_marker(root / "state" / _VALIDATION_MARKER)
+    manager = OwletRuntimeManager(
+        hass,
+        root=root,
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+    )
+    hass.set_state(CoreState.starting)
+    with patch.object(
+        manager, "async_prepare_and_probe_libraries", new_callable=AsyncMock
+    ) as restore:
+        manager.async_schedule_previous_validation_restore()
+        await asyncio.sleep(0)
+        restore.assert_not_awaited()
+
+        hass.set_state(CoreState.running)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+        restore_task = manager._restore_task
+        assert restore_task is not None
+        await restore_task
+
+    restore.assert_awaited_once_with()
 
 
 async def test_frame_probe_is_gated_until_libraries_pass(
