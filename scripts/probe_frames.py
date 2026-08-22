@@ -57,6 +57,7 @@ SAFE_STAGES: Final = frozenset(
         "av_initialize",
         "session_id",
         "iotc_connect",
+        "session_check",
         "av_authenticate",
         "start_video",
         "receive_frame",
@@ -78,6 +79,7 @@ SAFE_RESULT_FIELDS: Final = frozenset(
         "height",
         "estimated_fps",
         "first_frame_ms",
+        "session_mode",
         "clean_shutdown",
     }
 )

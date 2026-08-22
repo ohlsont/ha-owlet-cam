@@ -54,6 +54,10 @@ All notable changes are documented here. Versions follow semantic versioning.
   no new exit, Repair, or Owlet error.
 - The user confirmed Dream live video worked after the Yellow probes, providing
   evidence that the official app reclaimed the camera after helper teardown.
+- Added strict `lan`/`p2p`/`relay` session-mode reporting to the clean-room
+  helper. The rebuilt AArch64 binary and runtime archive passed local ELF,
+  safe-error, checksum and atomic-install validation; Yellow deployment is
+  pending.
 - Snapshot, RTSP/live streaming, Dream-open-during-probe coexistence,
   session-mode observation, and physical outage validation remain unperformed.
 

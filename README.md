@@ -148,7 +148,9 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   1920×1080 resolution, 13.599–14.341 estimated FPS, and clean shutdown. Dream
   live video worked after these Yellow probes, confirming post-probe camera
   recovery. Official-app-open-before-probe behavior and direct/relay
-  session-mode observation remain unverified.
+  session-mode observation remain unverified. Session-mode reporting is now
+  implemented as a three-value, non-secret field and locally validated, but the
+  rebuilt helper has not yet been deployed to Yellow.
 - The local brand art has not been submitted to Home Assistant Brands, so
   validation that requires the public Brands repository may remain pending.
 - The documentation and issue URLs assume future publication at

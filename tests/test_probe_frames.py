@@ -21,6 +21,7 @@ def test_validated_helper_result_accepts_fixed_safe_schema() -> None:
         "height": 1080,
         "estimated_fps": 12.5,
         "first_frame_ms": 800,
+        "session_mode": "lan",
         "clean_shutdown": True,
     }
 

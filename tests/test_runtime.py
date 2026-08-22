@@ -231,6 +231,7 @@ def test_parses_strict_frame_probe_result() -> None:
         "height": 1080,
         "estimated_fps": 12.5,
         "first_frame_ms": 800,
+        "session_mode": "lan",
         "clean_shutdown": True,
     }
 
@@ -239,6 +240,7 @@ def test_parses_strict_frame_probe_result() -> None:
     assert result.frames == 100
     assert result.width == 1920
     assert result.height == 1080
+    assert result.session_mode == "lan"
     assert result.clean_shutdown
 
 
@@ -302,6 +304,7 @@ def test_parses_complete_library_probe() -> None:
             "height": 1,
             "estimated_fps": 1.0,
             "first_frame_ms": 1,
+            "session_mode": "p2p",
             "clean_shutdown": True,
         },
         {
@@ -316,6 +319,22 @@ def test_parses_complete_library_probe() -> None:
             "height": 1,
             "estimated_fps": True,
             "first_frame_ms": 1,
+            "session_mode": "relay",
+            "clean_shutdown": True,
+        },
+        {
+            "event": "frame_probe",
+            "ok": True,
+            "frames": 1,
+            "bytes": 1,
+            "sps": 1,
+            "pps": 1,
+            "idr": 1,
+            "width": 1,
+            "height": 1,
+            "estimated_fps": 1.0,
+            "first_frame_ms": 1,
+            "session_mode": "unknown",
             "clean_shutdown": True,
         },
     ],
@@ -456,6 +475,7 @@ def _frame_probe_output() -> bytes:
             "height": 1080,
             "estimated_fps": 12.5,
             "first_frame_ms": 800,
+            "session_mode": "p2p",
             "clean_shutdown": True,
         }
     ).encode()

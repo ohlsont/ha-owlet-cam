@@ -67,6 +67,7 @@ _REQUIRED_SYMBOLS: Final = {
             "IOTC_Get_SessionID",
             "IOTC_Connect_ByUIDEx",
             "IOTC_Connect_Stop_BySID",
+            "IOTC_Session_Check",
             "IOTC_Session_Close",
             "IOTC_DeInitialize",
         }

@@ -23,6 +23,7 @@ _FRAME_FIELDS: Final = frozenset(
         "height",
         "estimated_fps",
         "first_frame_ms",
+        "session_mode",
         "clean_shutdown",
     }
 )
@@ -37,6 +38,7 @@ _ERROR_STAGES: Final = frozenset(
         "av_initialize",
         "session_id",
         "iotc_connect",
+        "session_check",
         "av_authenticate",
         "start_video",
         "receive_frame",
@@ -80,6 +82,7 @@ class FrameProbeResult:
     height: int
     estimated_fps: float
     first_frame_ms: int
+    session_mode: str
     clean_shutdown: bool
 
 
@@ -113,6 +116,7 @@ def parse_frame_probe_output(output: bytes) -> FrameProbeResult:
         "height",
         "estimated_fps",
         "first_frame_ms",
+        "session_mode",
         "clean_shutdown",
     }
     if not required.issubset(payload):
@@ -133,9 +137,14 @@ def parse_frame_probe_output(output: bytes) -> FrameProbeResult:
     if not all(_is_int(value) and value >= 0 for value in integers):
         raise OwletHelperProtocolError("Native helper returned invalid statistics")
     fps = payload["estimated_fps"]
+    session_mode = payload["session_mode"]
     if not isinstance(fps, (int, float)) or isinstance(fps, bool):
         raise OwletHelperProtocolError("Native helper returned invalid statistics")
-    if not 0 <= float(fps) <= 240 or payload["clean_shutdown"] is not True:
+    if (
+        not 0 <= float(fps) <= 240
+        or session_mode not in {"lan", "p2p", "relay"}
+        or payload["clean_shutdown"] is not True
+    ):
         raise OwletHelperProtocolError("Native helper returned invalid statistics")
     return FrameProbeResult(
         frames=int(payload["frames"]),
@@ -147,6 +156,7 @@ def parse_frame_probe_output(output: bytes) -> FrameProbeResult:
         height=int(payload["height"]),
         estimated_fps=float(fps),
         first_frame_ms=int(payload["first_frame_ms"]),
+        session_mode=str(session_mode),
         clean_shutdown=True,
     )
 

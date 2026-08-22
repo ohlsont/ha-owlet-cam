@@ -48,6 +48,25 @@ typedef void (*iotc_setup_session_timeout_fn)(uint32_t timeout_seconds);
 typedef int (*iotc_get_session_id_fn)(void);
 typedef int (*iotc_connect_ex_fn)(const char *uid, int sid, void *input);
 typedef int (*iotc_connect_stop_fn)(int sid);
+struct session_info {
+    uint8_t mode;
+    char client_or_device;
+    char uid[21];
+    char remote_ip[17];
+    unsigned short remote_port;
+    uint32_t tx_packet_count;
+    uint32_t rx_packet_count;
+    uint32_t iotc_version;
+    unsigned short vendor_id;
+    unsigned short product_id;
+    unsigned short group_id;
+    uint8_t nat_type;
+    uint8_t is_secure;
+};
+typedef char session_info_size_must_be_64[
+    sizeof(struct session_info) == 64 ? 1 : -1
+];
+typedef int (*iotc_session_check_fn)(int sid, struct session_info *info);
 typedef int (*iotc_session_close_fn)(int sid);
 typedef int (*iotc_deinitialize_fn)(void);
 typedef int (*av_initialize_fn)(int maximum_channels);
@@ -71,6 +90,7 @@ struct api {
     iotc_get_session_id_fn iotc_get_session_id;
     iotc_connect_ex_fn iotc_connect_ex;
     iotc_connect_stop_fn iotc_connect_stop;
+    iotc_session_check_fn iotc_session_check;
     iotc_session_close_fn iotc_session_close;
     iotc_deinitialize_fn iotc_deinitialize;
     av_initialize_fn av_initialize;
@@ -97,6 +117,7 @@ struct probe_stats {
     uint32_t width;
     uint32_t height;
     unsigned long first_frame_ms;
+    uint8_t session_mode;
 };
 
 struct bit_reader {
@@ -584,6 +605,14 @@ static void emit_success(const struct probe_stats *stats,
     }
     write_text(",\"first_frame_ms\":");
     write_unsigned(stats->first_frame_ms);
+    write_text(",\"session_mode\":\"");
+    if (stats->session_mode == 0)
+        write_text("p2p");
+    else if (stats->session_mode == 1)
+        write_text("relay");
+    else
+        write_text("lan");
+    write_text("\"");
     write_text(",\"clean_shutdown\":true}\n");
 }
 
@@ -608,6 +637,7 @@ static int load_api(struct api *api, void **global_handle, void **iotc_handle,
     LOAD(api->iotc_get_session_id, *iotc_handle, "IOTC_Get_SessionID");
     LOAD(api->iotc_connect_ex, *iotc_handle, "IOTC_Connect_ByUIDEx");
     LOAD(api->iotc_connect_stop, *iotc_handle, "IOTC_Connect_Stop_BySID");
+    LOAD(api->iotc_session_check, *iotc_handle, "IOTC_Session_Check");
     LOAD(api->iotc_session_close, *iotc_handle, "IOTC_Session_Close");
     LOAD(api->iotc_deinitialize, *iotc_handle, "IOTC_DeInitialize");
     LOAD(api->av_initialize, *av_handle, "avInitialize");
@@ -628,6 +658,7 @@ static int run_probe(void) {
     uint8_t connect_input[CONNECT_INPUT_SIZE];
     uint8_t av_input[AV_INPUT_SIZE];
     uint8_t av_output[AV_OUTPUT_SIZE];
+    struct session_info session;
     char frame_info[FRAME_INFO_SIZE];
     const char account[] = "admin";
     const char cipher[] = "DEFAULT:@SECLEVEL=0";
@@ -644,6 +675,7 @@ static int run_probe(void) {
     zero_bytes(connect_input, sizeof(connect_input));
     zero_bytes(av_input, sizeof(av_input));
     zero_bytes(av_output, sizeof(av_output));
+    zero_bytes(&session, sizeof(session));
     if (!read_secrets(&values)) {
         emit_error("invalid_input", -1);
         goto cleanup;
@@ -704,6 +736,12 @@ static int run_probe(void) {
         goto cleanup;
     }
     sid = native_code;
+    native_code = api.iotc_session_check(sid, &session);
+    if (native_code < 0 || session.mode > 2) {
+        emit_error("session_check", native_code < 0 ? native_code : -1);
+        goto cleanup;
+    }
+    stats.session_mode = session.mode;
     put_u32(av_input, AV_INPUT_SIZE);
     put_u32(av_input + 4, (uint32_t)sid);
     av_input[8] = 0;
@@ -773,6 +811,7 @@ cleanup:
     scrub(connect_input, sizeof(connect_input));
     scrub(av_input, sizeof(av_input));
     scrub(av_output, sizeof(av_output));
+    scrub(&session, sizeof(session));
     scrub(frame_buffer, sizeof(frame_buffer));
     if (result == 0)
         emit_success(&stats, monotonic_ms() - started_ms);
