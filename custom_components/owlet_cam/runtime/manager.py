@@ -11,7 +11,7 @@ import secrets
 import shutil
 import stat
 import tempfile
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -20,6 +20,13 @@ from typing import Any, Final
 from homeassistant.core import HomeAssistant
 
 from ..api.cloud import OwletCloudClient
+from ..api.exceptions import (
+    OwletAuthenticationError,
+    OwletCameraNotFoundError,
+    OwletCamError,
+    OwletConnectionError,
+    OwletRateLimitError,
+)
 from .apk import (
     REQUIRED_LIBRARIES,
     SUPPORTED_ARCHIVE_SUFFIXES,
@@ -30,12 +37,14 @@ from .apk import (
 from .elf import ElfInspectionError, inspect_elf
 from .process import OwletHelperProcessError, OwletHelperProcessRunner
 from .protocol import (
+    MAX_SNAPSHOT_CAPTURE,
     FrameProbeResult,
     LibraryProbeResult,
     OwletHelperProtocolError,
     OwletHelperReportedError,
     parse_frame_probe_output,
     parse_library_probe_output,
+    parse_snapshot_capture_output,
 )
 
 RUNTIME_LAYOUT_VERSION: Final = 1
@@ -44,11 +53,13 @@ RUNTIME_CURRENT: Final = "current"
 SUPPORTED_MACHINE: Final = "aarch64"
 _FRAME_PROBE_TIMEOUT: Final = 75.0
 _LIBRARY_PROBE_TIMEOUT: Final = 20.0
+_SNAPSHOT_CAPTURE_TIMEOUT: Final = 30.0
 _PROCESS_SESSION: Final = secrets.token_hex(8)
 _REQUIRED_RUNTIME_FILES: Final = frozenset(
     {
         "bin/frame_probe",
         "bin/probe_libraries",
+        "bin/snapshot_capture",
         "runtime/bin/linker64",
         "runtime/lib64/libc.so",
         "runtime/lib64/libdl.so",
@@ -138,6 +149,9 @@ class RuntimeSnapshot:
     last_error_code: str | None = None
     last_frame_probe_at: datetime | None = None
     last_frame_probe: FrameProbeResult | None = None
+    last_snapshot_at: datetime | None = None
+    last_snapshot_width: int | None = None
+    last_snapshot_height: int | None = None
 
 
 class OwletRuntimeManager:
@@ -161,6 +175,7 @@ class OwletRuntimeManager:
         self._listeners: set[Callable[[], None]] = set()
         self._prepared: PreparedRuntime | None = None
         self._sdk_key: bytearray | None = None
+        self._shutdown = False
         self.snapshot = RuntimeSnapshot()
 
     @property
@@ -172,6 +187,11 @@ class OwletRuntimeManager:
     def frame_probe_available(self) -> bool:
         """Return whether every earlier gate has passed."""
         return self._prepared is not None and self.snapshot.libraries_compatible is True
+
+    @property
+    def snapshot_available(self) -> bool:
+        """Return whether the gated snapshot path is currently usable."""
+        return self.frame_probe_available and self.snapshot.status != "error"
 
     def async_add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
         """Register a synchronous state listener."""
@@ -185,6 +205,7 @@ class OwletRuntimeManager:
     async def async_prepare_and_probe_libraries(self) -> LibraryProbeResult:
         """Extract, inspect, verify, then dlopen without contacting a camera."""
         async with self._lock:
+            self._raise_if_stopped()
             self._set_status("preparing")
             try:
                 prepared, sdk_key = await self._hass.async_add_executor_job(
@@ -205,6 +226,7 @@ class OwletRuntimeManager:
                         "library_probe_failed", "Native libraries could not be loaded"
                     )
                 probe = parse_library_probe_output(result.stdout)
+                self._raise_if_stopped()
                 self._prepared = prepared
                 self.snapshot.helper_version = prepared.manifest.version
                 self.snapshot.libraries_compatible = probe.compatible
@@ -212,14 +234,17 @@ class OwletRuntimeManager:
                 self._set_status("ready")
                 return probe
             except OwletRuntimeError as err:
+                self._raise_if_stopped()
                 self._record_error(err.code, libraries_failed=True)
                 raise
             except OwletArchiveError as err:
+                self._raise_if_stopped()
                 self._record_error("invalid_apk", libraries_failed=True)
                 raise OwletRuntimeError(
                     "invalid_apk", "The user-supplied application is invalid"
                 ) from err
             except ElfInspectionError as err:
+                self._raise_if_stopped()
                 self._record_error("library_incompatible", libraries_failed=True)
                 raise OwletRuntimeError(
                     "library_incompatible", "A native library is incompatible"
@@ -229,6 +254,7 @@ class OwletRuntimeManager:
                 OwletHelperProtocolError,
                 OwletHelperReportedError,
             ) as err:
+                self._raise_if_stopped()
                 self._record_error("library_probe_failed", libraries_failed=True)
                 raise OwletRuntimeError(
                     "library_probe_failed", "Native libraries could not be loaded"
@@ -237,6 +263,7 @@ class OwletRuntimeManager:
     async def async_run_frame_probe(self) -> FrameProbeResult:
         """Fetch fresh credentials and receive a bounded set of real frames."""
         async with self._lock:
+            self._raise_if_stopped()
             if self._prepared is None or self._sdk_key is None:
                 raise OwletRuntimeError(
                     "runtime_not_ready", "Run the runtime probe first"
@@ -268,29 +295,142 @@ class OwletRuntimeManager:
                     raise OwletRuntimeError(
                         "frame_probe_failed", "The camera frame probe failed"
                     )
+                self._raise_if_stopped()
                 self.snapshot.last_frame_probe = probe
                 self.snapshot.last_frame_probe_at = datetime.now(UTC)
                 self.snapshot.last_error_code = None
                 self._set_status("ready")
                 return probe
             except OwletHelperReportedError as err:
+                self._raise_if_stopped()
                 self._record_error(f"native_{err.stage}_{err.native_code}")
                 raise OwletRuntimeError(
                     "frame_probe_failed", "The camera frame probe failed"
                 ) from err
             except (OwletHelperProcessError, OwletHelperProtocolError) as err:
+                self._raise_if_stopped()
                 self._record_error("frame_probe_failed")
                 raise OwletRuntimeError(
                     "frame_probe_failed", "The camera frame probe failed"
                 ) from err
+            except OwletCamError as err:
+                self._raise_if_stopped()
+                code = _cloud_error_code(err)
+                self._record_error(code)
+                raise OwletRuntimeError(
+                    code, "Camera connection credentials could not be refreshed"
+                ) from err
 
+    async def async_capture_snapshot(
+        self, decoder: Callable[[Path], Awaitable[bytes | None]]
+    ) -> bytes:
+        """Capture one decodable access unit and decode it before cleanup."""
+        async with self._lock:
+            self._raise_if_stopped()
+            if self._prepared is None or self._sdk_key is None:
+                raise OwletRuntimeError(
+                    "runtime_not_ready", "Run the runtime probe first"
+                )
+            self._set_status("snapshot_capture_running")
+            descriptor = -1
+            capture_path: Path | None = None
+            try:
+                descriptor, capture_path = await self._hass.async_add_executor_job(
+                    _create_snapshot_file, self._root / "tmp"
+                )
+                credentials = await self._client.async_get_camera_credentials(
+                    self._camera_identifier
+                )
+                payload = _secret_json_payload(
+                    sdk_key=self._sdk_key,
+                    uid=credentials.uid,
+                    auth_key=credentials.auth_key,
+                    av_password=credentials.av_password,
+                    output_fd=descriptor,
+                )
+                del credentials
+                command, environment = self._helper_invocation(
+                    self._prepared, "snapshot_capture"
+                )
+                result = await self._runner.async_run(
+                    command,
+                    stdin=payload,
+                    timeout_seconds=_SNAPSHOT_CAPTURE_TIMEOUT,
+                    cwd=self._prepared.manifest.root,
+                    environment=environment,
+                    pass_fds=(descriptor,),
+                )
+                await self._hass.async_add_executor_job(os.close, descriptor)
+                descriptor = -1
+                capture = parse_snapshot_capture_output(result.stdout)
+                if result.returncode != 0:
+                    raise OwletRuntimeError(
+                        "snapshot_capture_failed", "The camera snapshot capture failed"
+                    )
+                await self._hass.async_add_executor_job(
+                    _verify_snapshot_file, capture_path, capture.capture_bytes
+                )
+                image = await decoder(capture_path)
+                if image is None:
+                    raise OwletRuntimeError(
+                        "snapshot_decode_failed",
+                        "The camera snapshot could not be decoded",
+                    )
+                self._raise_if_stopped()
+                self.snapshot.last_snapshot_at = datetime.now(UTC)
+                self.snapshot.last_snapshot_width = capture.width
+                self.snapshot.last_snapshot_height = capture.height
+                self.snapshot.last_error_code = None
+                self._set_status("ready")
+                return image
+            except OwletRuntimeError as err:
+                self._raise_if_stopped()
+                self._record_snapshot_error(err.code)
+                raise
+            except OwletHelperReportedError as err:
+                self._raise_if_stopped()
+                self._record_snapshot_error(f"native_{err.stage}_{err.native_code}")
+                raise OwletRuntimeError(
+                    "snapshot_capture_failed", "The camera snapshot capture failed"
+                ) from err
+            except (OwletHelperProcessError, OwletHelperProtocolError) as err:
+                self._raise_if_stopped()
+                self._record_snapshot_error("snapshot_capture_failed")
+                raise OwletRuntimeError(
+                    "snapshot_capture_failed", "The camera snapshot capture failed"
+                ) from err
+            except OwletCamError as err:
+                self._raise_if_stopped()
+                code = _cloud_error_code(err)
+                self._record_snapshot_error(code)
+                raise OwletRuntimeError(
+                    code, "Camera snapshot credentials could not be refreshed"
+                ) from err
+            except TimeoutError as err:
+                self._raise_if_stopped()
+                self._record_snapshot_error("snapshot_decode_timeout")
+                raise OwletRuntimeError(
+                    "snapshot_decode_timeout", "The camera snapshot decode timed out"
+                ) from err
+            finally:
+                if descriptor >= 0:
+                    await self._hass.async_add_executor_job(os.close, descriptor)
+                if capture_path is not None:
+                    await self._hass.async_add_executor_job(
+                        capture_path.unlink, True
+                    )
     async def async_shutdown(self) -> None:
         """Stop children, scrub SDK material, and release runtime state."""
+        self._shutdown = True
         await self._runner.async_stop()
         self._replace_sdk_key(None)
         self._prepared = None
         self.snapshot.libraries_compatible = None
         self._set_status("stopped")
+
+    def _raise_if_stopped(self) -> None:
+        if self._shutdown:
+            raise asyncio.CancelledError
 
     def diagnostics(self) -> dict[str, Any]:
         """Return safe cached facts without filesystem or network I/O."""
@@ -307,6 +447,17 @@ class OwletRuntimeManager:
                 else None
             ),
             "last_frame_probe": asdict(probe) if probe is not None else None,
+            "last_snapshot_at": (
+                self.snapshot.last_snapshot_at.isoformat()
+                if self.snapshot.last_snapshot_at is not None
+                else None
+            ),
+            "last_snapshot_resolution": (
+                f"{self.snapshot.last_snapshot_width}x{self.snapshot.last_snapshot_height}"
+                if self.snapshot.last_snapshot_width is not None
+                and self.snapshot.last_snapshot_height is not None
+                else None
+            ),
         }
 
     def _prepare_sync(self) -> tuple[PreparedRuntime, bytearray]:
@@ -373,6 +524,11 @@ class OwletRuntimeManager:
             self.snapshot.libraries_compatible = False
         self._set_status("error")
 
+    def _record_snapshot_error(self, code: str) -> None:
+        """Record a request failure while leaving the validated path retryable."""
+        self.snapshot.last_error_code = code
+        self._set_status("ready")
+
     def _set_status(self, status: str) -> None:
         self.snapshot.status = status
         for listener in tuple(self._listeners):
@@ -382,6 +538,18 @@ class OwletRuntimeManager:
 def _normalized_machine() -> str:
     machine = platform.machine().strip().lower()
     return "aarch64" if machine in {"aarch64", "arm64"} else machine
+
+
+def _cloud_error_code(error: OwletCamError) -> str:
+    if isinstance(error, OwletAuthenticationError):
+        return "reauthentication_required"
+    if isinstance(error, OwletRateLimitError):
+        return "cloud_rate_limited"
+    if isinstance(error, OwletCameraNotFoundError):
+        return "camera_unavailable"
+    if isinstance(error, OwletConnectionError):
+        return "cloud_connection_failed"
+    return "cloud_request_failed"
 
 
 def _prepare_directories(root: Path) -> None:
@@ -542,17 +710,48 @@ def _sha256(path: Path) -> str:
 
 
 def _secret_json_payload(
-    *, sdk_key: bytearray, uid: str, auth_key: str, av_password: str
+    *,
+    sdk_key: bytearray,
+    uid: str,
+    auth_key: str,
+    av_password: str,
+    output_fd: int | None = None,
 ) -> bytearray:
     # JSON encoding creates one short-lived in-memory string, never a file,
     # environment variable, command argument, diagnostic value, or log record.
+    values = {
+        "sdk_key": sdk_key.decode("ascii"),
+        "uid": uid,
+        "auth_key": auth_key,
+        "av_password": av_password,
+    }
+    if output_fd is not None:
+        values["output_fd"] = str(output_fd)
     payload = json.dumps(
-        {
-            "sdk_key": sdk_key.decode("ascii"),
-            "uid": uid,
-            "auth_key": auth_key,
-            "av_password": av_password,
-        },
+        values,
         separators=(",", ":"),
     )
     return bytearray(payload.encode("utf-8") + b"\n")
+
+
+def _create_snapshot_file(directory: Path) -> tuple[int, Path]:
+    directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+    descriptor, raw_path = tempfile.mkstemp(
+        prefix=f"snapshot-{_PROCESS_SESSION}-", suffix=".h264", dir=directory
+    )
+    os.fchmod(descriptor, 0o600)
+    return descriptor, Path(raw_path)
+
+
+def _verify_snapshot_file(path: Path, expected_size: int) -> None:
+    metadata = path.lstat()
+    if (
+        path.is_symlink()
+        or not stat.S_ISREG(metadata.st_mode)
+        or expected_size < 1
+        or expected_size > MAX_SNAPSHOT_CAPTURE
+        or metadata.st_size != expected_size
+    ):
+        raise OwletRuntimeError(
+            "snapshot_capture_failed", "The camera snapshot capture failed"
+        )

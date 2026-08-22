@@ -47,6 +47,7 @@ class OwletHelperProcessRunner:
         timeout_seconds: float,
         cwd: Path | None = None,
         environment: Mapping[str, str] | None = None,
+        pass_fds: Sequence[int] = (),
     ) -> HelperProcessResult:
         """Run one bounded helper, passing any secrets only over stdin."""
         if timeout_seconds <= 0 or not command:
@@ -65,6 +66,7 @@ class OwletHelperProcessRunner:
                         "LANG": "C",
                         **(environment or {}),
                     },
+                    pass_fds=tuple(pass_fds),
                     start_new_session=True,
                 )
                 process = self._process

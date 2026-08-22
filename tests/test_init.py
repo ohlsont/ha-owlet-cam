@@ -121,6 +121,7 @@ async def test_embedded_setup_unload_and_reload(hass: HomeAssistant) -> None:
             is not None
         )
         assert hass.states.get("sensor.nursery_authentication_expiry") is not None
+        assert len(hass.states.async_entity_ids("camera")) == 1
 
         assert await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
@@ -132,6 +133,7 @@ async def test_embedded_setup_unload_and_reload(hass: HomeAssistant) -> None:
 
     assert not hass.states.async_entity_ids("binary_sensor")
     assert not hass.states.async_entity_ids("sensor")
+    assert not hass.states.async_entity_ids("camera")
     assert validate.await_count == 2
 
 

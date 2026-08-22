@@ -8,6 +8,7 @@ from typing import Any, Final, cast
 
 MAX_HELPER_OUTPUT: Final = 64 * 1024
 _FRAME_EVENT: Final = "frame_probe"
+_SNAPSHOT_EVENT: Final = "snapshot_capture"
 _FRAME_FIELDS: Final = frozenset(
     {
         "event",
@@ -27,6 +28,8 @@ _FRAME_FIELDS: Final = frozenset(
         "clean_shutdown",
     }
 )
+_SNAPSHOT_FIELDS: Final = _FRAME_FIELDS | {"capture_bytes"}
+MAX_SNAPSHOT_CAPTURE: Final = 4 * 1024 * 1024
 _ERROR_STAGES: Final = frozenset(
     {
         "invalid_input",
@@ -43,6 +46,7 @@ _ERROR_STAGES: Final = frozenset(
         "start_video",
         "receive_frame",
         "no_frame_timeout",
+        "capture_output",
     }
 )
 _LIBRARY_NAMES: Final = frozenset(
@@ -92,6 +96,21 @@ class LibraryProbeResult:
 
     compatible: bool
     libraries: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotCaptureResult:
+    """Non-secret metadata for one captured decodable H.264 access unit."""
+
+    frames: int
+    capture_bytes: int
+    sps: int
+    pps: int
+    idr: int
+    width: int
+    height: int
+    session_mode: str
+    clean_shutdown: bool
 
 
 def parse_frame_probe_output(output: bytes) -> FrameProbeResult:
@@ -198,6 +217,61 @@ def parse_library_probe_output(output: bytes) -> LibraryProbeResult:
     if not complete or loaded != _LIBRARY_NAMES:
         raise OwletHelperProtocolError("Native helper result is incomplete")
     return LibraryProbeResult(compatible=True, libraries=tuple(sorted(loaded)))
+
+
+def parse_snapshot_capture_output(output: bytes) -> SnapshotCaptureResult:
+    """Parse one fixed-schema decodable-GOP capture result."""
+    payload = _single_json_object(output)
+    if set(payload) - _SNAPSHOT_FIELDS or payload.get("event") != _SNAPSHOT_EVENT:
+        raise OwletHelperProtocolError("Native helper returned unsafe output")
+    if payload.get("ok") is not True:
+        stage = payload.get("stage")
+        native_code = payload.get("native_code")
+        if stage not in _ERROR_STAGES or not _is_int(native_code):
+            raise OwletHelperProtocolError("Native helper returned invalid error data")
+        raise OwletHelperReportedError(str(stage), cast(int, native_code))
+    required = {
+        "frames",
+        "capture_bytes",
+        "sps",
+        "pps",
+        "idr",
+        "width",
+        "height",
+        "session_mode",
+        "clean_shutdown",
+    }
+    if not required.issubset(payload):
+        raise OwletHelperProtocolError("Native helper result is incomplete")
+    integers = [
+        payload[key]
+        for key in ("frames", "capture_bytes", "sps", "pps", "idr", "width", "height")
+    ]
+    if not all(_is_int(value) and value >= 0 for value in integers):
+        raise OwletHelperProtocolError("Native helper returned invalid statistics")
+    if (
+        not 1 <= payload["frames"] <= 100
+        or not 1 <= payload["capture_bytes"] <= MAX_SNAPSHOT_CAPTURE
+        or payload["sps"] < 1
+        or payload["pps"] < 1
+        or payload["idr"] < 1
+        or not 160 <= payload["width"] <= 8192
+        or not 120 <= payload["height"] <= 8192
+        or payload["session_mode"] not in {"lan", "p2p", "relay"}
+        or payload["clean_shutdown"] is not True
+    ):
+        raise OwletHelperProtocolError("Native helper returned invalid statistics")
+    return SnapshotCaptureResult(
+        frames=payload["frames"],
+        capture_bytes=payload["capture_bytes"],
+        sps=payload["sps"],
+        pps=payload["pps"],
+        idr=payload["idr"],
+        width=payload["width"],
+        height=payload["height"],
+        session_mode=payload["session_mode"],
+        clean_shutdown=True,
+    )
 
 
 def _single_json_object(output: bytes) -> dict[str, Any]:

@@ -24,6 +24,9 @@ and exits. The local binary was an AArch64 PIE with the explicit interpreter
 the observed public/native ABI without proprietary headers, accepts all secret
 material only in a single stdin JSON object, scrubs its fixed buffers, and emits
 only fixed-schema connection/frame statistics. No compiled copy is committed.
+The same source is compiled with `SNAPSHOT_CAPTURE` into a distinct helper that
+stops after a decodable SPS/PPS/IDR access unit and writes those H.264 bytes only
+to a validated inherited descriptor. No media is mixed with its JSON stdout.
 
 `scripts/build_helper_runtime.py` now creates a deterministic `tar.gz` with a
 per-file runtime manifest, the minimal open-source runtime, and complete AOSP

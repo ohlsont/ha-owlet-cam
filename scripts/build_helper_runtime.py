@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Final
 
 ROOT: Final = Path(__file__).resolve().parents[1]
-VERSION: Final = "0.4.0-dev"
+VERSION: Final = "0.5.0-dev"
 ARCHITECTURE: Final = "aarch64"
 AOSP_COMMIT: Final = "070571b455076f77a01c7b07154a15e545d2b428"
 AOSP_APEX_SHA256: Final = (
@@ -35,6 +35,7 @@ _RUNTIME_FILES: Final = {
 def build_runtime_archive(
     *,
     frame_probe: Path,
+    snapshot_capture: Path,
     library_probe: Path,
     runtime_root: Path,
     aosp_notice: Path,
@@ -43,6 +44,7 @@ def build_runtime_archive(
     """Build one deterministic tar.gz and return its SHA-256."""
     inputs = {
         "bin/frame_probe": frame_probe,
+        "bin/snapshot_capture": snapshot_capture,
         "bin/probe_libraries": library_probe,
         **{
             archive_path: runtime_root / source_path
@@ -64,6 +66,7 @@ def build_runtime_archive(
             if relative in {
                 "bin/frame_probe",
                 "bin/probe_libraries",
+                "bin/snapshot_capture",
                 "runtime/bin/linker64",
             }:
                 mode = 0o700
@@ -148,6 +151,7 @@ def main() -> int:
     """Build from explicit non-secret paths."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--frame-probe", type=Path, required=True)
+    parser.add_argument("--snapshot-capture", type=Path, required=True)
     parser.add_argument("--library-probe", type=Path, required=True)
     parser.add_argument("--runtime-root", type=Path, required=True)
     parser.add_argument("--aosp-notice", type=Path, required=True)
@@ -155,6 +159,7 @@ def main() -> int:
     args = parser.parse_args()
     checksum = build_runtime_archive(
         frame_probe=args.frame_probe,
+        snapshot_capture=args.snapshot_capture,
         library_probe=args.library_probe,
         runtime_root=args.runtime_root,
         aosp_notice=args.aosp_notice,

@@ -39,6 +39,11 @@ extern void _exit(int status) __attribute__((noreturn));
 #define AV_ER_DATA_NOREADY -20012
 #define AV_ER_LOSED_THIS_FRAME -20014
 #define AV_ER_INCOMPLETE_FRAME -20013
+#ifdef SNAPSHOT_CAPTURE
+#define EVENT_NAME "snapshot_capture"
+#else
+#define EVENT_NAME "frame_probe"
+#endif
 
 typedef int (*set_license_fn)(const char *key);
 typedef int (*set_region_fn)(int region);
@@ -106,6 +111,9 @@ struct secrets {
     char uid[128];
     char auth_key[32];
     char av_password[128];
+#ifdef SNAPSHOT_CAPTURE
+    int output_fd;
+#endif
 };
 
 struct probe_stats {
@@ -118,6 +126,9 @@ struct probe_stats {
     uint32_t height;
     unsigned long first_frame_ms;
     uint8_t session_mode;
+#ifdef SNAPSHOT_CAPTURE
+    unsigned long capture_bytes;
+#endif
 };
 
 struct bit_reader {
@@ -149,6 +160,20 @@ static void write_text(const char *value) {
         remaining -= (size_t)written;
     }
 }
+
+#ifdef SNAPSHOT_CAPTURE
+static int write_all_fd(int fd, const uint8_t *data, size_t size) {
+    while (size > 0) {
+        ssize_t written = write(fd, data, size);
+        if (written <= 0) {
+            return 0;
+        }
+        data += written;
+        size -= (size_t)written;
+    }
+    return 1;
+}
+#endif
 
 static void write_unsigned(unsigned long value) {
     char digits[32];
@@ -310,10 +335,36 @@ static int parse_json_string(const char *json, const char *key, char *output,
     return 0;
 }
 
+#ifdef SNAPSHOT_CAPTURE
+static int parse_output_fd(const char *value, int *output_fd) {
+    unsigned int result = 0;
+    size_t index = 0;
+    if (value[0] == '\0') {
+        return 0;
+    }
+    while (value[index] != '\0') {
+        if (value[index] < '0' || value[index] > '9' || result > 104857U) {
+            return 0;
+        }
+        result = result * 10U + (unsigned int)(value[index] - '0');
+        index++;
+    }
+    if (result < 3 || result > 1048575U) {
+        return 0;
+    }
+    *output_fd = (int)result;
+    return 1;
+}
+#endif
+
 static int read_secrets(struct secrets *values) {
     char input[INPUT_MAX];
     size_t used = 0;
     ssize_t received;
+#ifdef SNAPSHOT_CAPTURE
+    char output_fd[16];
+    zero_bytes(output_fd, sizeof(output_fd));
+#endif
     zero_bytes(input, sizeof(input));
     while (used + 1 < sizeof(input)) {
         received = read(0, input + used, sizeof(input) - used - 1);
@@ -336,11 +387,23 @@ static int read_secrets(struct secrets *values) {
         !parse_json_string(input, "auth_key", values->auth_key,
                            sizeof(values->auth_key)) ||
         !parse_json_string(input, "av_password", values->av_password,
-                           sizeof(values->av_password))) {
+                           sizeof(values->av_password))
+#ifdef SNAPSHOT_CAPTURE
+        || !parse_json_string(input, "output_fd", output_fd,
+                              sizeof(output_fd))
+        || !parse_output_fd(output_fd, &values->output_fd)
+#endif
+    ) {
         scrub(input, sizeof(input));
+#ifdef SNAPSHOT_CAPTURE
+        scrub(output_fd, sizeof(output_fd));
+#endif
         return 0;
     }
     scrub(input, sizeof(input));
+#ifdef SNAPSHOT_CAPTURE
+    scrub(output_fd, sizeof(output_fd));
+#endif
     return 1;
 }
 
@@ -529,9 +592,10 @@ static size_t start_code_size(const uint8_t *data, size_t size, size_t offset) {
     return 0;
 }
 
-static void inspect_annex_b(const uint8_t *data, size_t size,
-                            struct probe_stats *stats) {
+static uint32_t inspect_annex_b(const uint8_t *data, size_t size,
+                                struct probe_stats *stats) {
     size_t offset = 0;
+    uint32_t found = 0;
     while (offset < size) {
         size_t prefix = start_code_size(data, size, offset);
         size_t nal_start;
@@ -552,22 +616,28 @@ static void inspect_annex_b(const uint8_t *data, size_t size,
         }
         type = data[nal_start] & 0x1f;
         if (type == 7) {
+            found |= 1U;
             stats->sps++;
             if (stats->width == 0) {
                 parse_sps(data + nal_start, nal_end - nal_start, &stats->width,
                           &stats->height);
             }
         } else if (type == 8) {
+            found |= 2U;
             stats->pps++;
         } else if (type == 5) {
+            found |= 4U;
             stats->idr++;
         }
         offset = nal_end;
     }
+    return found;
 }
 
 static void emit_error(const char *stage, int native_code) {
-    write_text("{\"event\":\"frame_probe\",\"ok\":false,\"stage\":\"");
+    write_text("{\"event\":\"");
+    write_text(EVENT_NAME);
+    write_text("\",\"ok\":false,\"stage\":\"");
     write_text(stage);
     write_text("\",\"native_code\":");
     write_signed(native_code);
@@ -580,7 +650,9 @@ static void emit_success(const struct probe_stats *stats,
                                   ? ((unsigned long)stats->frames * 1000000UL) /
                                         elapsed_ms
                                   : 0;
-    write_text("{\"event\":\"frame_probe\",\"ok\":true,\"frames\":");
+    write_text("{\"event\":\"");
+    write_text(EVENT_NAME);
+    write_text("\",\"ok\":true,\"frames\":");
     write_unsigned(stats->frames);
     write_text(",\"bytes\":");
     write_unsigned(stats->bytes);
@@ -613,6 +685,10 @@ static void emit_success(const struct probe_stats *stats,
     else
         write_text("lan");
     write_text("\"");
+#ifdef SNAPSHOT_CAPTURE
+    write_text(",\"capture_bytes\":");
+    write_unsigned(stats->capture_bytes);
+#endif
     write_text(",\"clean_shutdown\":true}\n");
 }
 
@@ -779,7 +855,23 @@ static int run_probe(void) {
                     stats.first_frame_ms = monotonic_ms() - first_frame_started_ms;
                 stats.frames++;
                 stats.bytes += (unsigned long)data_size;
-                inspect_annex_b(frame_buffer, (size_t)data_size, &stats);
+                {
+#ifdef SNAPSHOT_CAPTURE
+                    uint32_t nal_types =
+                        inspect_annex_b(frame_buffer, (size_t)data_size, &stats);
+                    if ((nal_types & 7U) == 7U) {
+                        if (!write_all_fd(values.output_fd, frame_buffer,
+                                          (size_t)data_size)) {
+                            emit_error("capture_output", -1);
+                            goto cleanup;
+                        }
+                        stats.capture_bytes = (unsigned long)data_size;
+                        break;
+                    }
+#else
+                    inspect_annex_b(frame_buffer, (size_t)data_size, &stats);
+#endif
+                }
             }
             continue;
         }
@@ -792,7 +884,11 @@ static int run_probe(void) {
         emit_error("receive_frame", native_code);
         goto cleanup;
     }
+#ifdef SNAPSHOT_CAPTURE
+    if (stats.capture_bytes == 0) {
+#else
     if (stats.frames < 100) {
+#endif
         emit_error("no_frame_timeout", native_code);
         goto cleanup;
     }

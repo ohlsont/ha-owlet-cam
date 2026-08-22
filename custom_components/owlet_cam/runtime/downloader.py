@@ -28,6 +28,7 @@ _ALLOWED_FILES: Final = frozenset(
         "LICENSES/OWLET-CAM-MIT.txt",
         "bin/frame_probe",
         "bin/probe_libraries",
+        "bin/snapshot_capture",
         "runtime/bin/linker64",
         "runtime/lib64/libc.so",
         "runtime/lib64/libdl.so",
@@ -36,7 +37,12 @@ _ALLOWED_FILES: Final = frozenset(
     }
 )
 _EXECUTABLES: Final = frozenset(
-    {"bin/frame_probe", "bin/probe_libraries", "runtime/bin/linker64"}
+    {
+        "bin/frame_probe",
+        "bin/probe_libraries",
+        "bin/snapshot_capture",
+        "runtime/bin/linker64",
+    }
 )
 _NATIVE_LIBRARIES: Final = frozenset(
     {

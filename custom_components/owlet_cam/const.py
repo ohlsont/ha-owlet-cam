@@ -7,7 +7,12 @@ from homeassistant.const import CONF_PASSWORD as HA_CONF_PASSWORD
 from homeassistant.const import Platform
 
 DOMAIN: Final = "owlet_cam"
-PLATFORMS: Final = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON]
+PLATFORMS: Final = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.CAMERA,
+]
 
 CONF_MODE: Final = "mode"
 CONF_EMAIL: Final = "email"

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import io
 import json
+import os
 import struct
 import sys
 import tarfile
@@ -18,6 +19,12 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.owlet_cam.api.cloud import OwletCloudClient
+from custom_components.owlet_cam.api.exceptions import (
+    OwletAuthenticationError,
+    OwletCameraNotFoundError,
+    OwletConnectionError,
+    OwletRateLimitError,
+)
 from custom_components.owlet_cam.api.models import OwletCameraCredentials
 from custom_components.owlet_cam.runtime.apk import OwletArchiveError
 from custom_components.owlet_cam.runtime.downloader import (
@@ -49,6 +56,7 @@ from custom_components.owlet_cam.runtime.protocol import (
     OwletHelperReportedError,
     parse_frame_probe_output,
     parse_library_probe_output,
+    parse_snapshot_capture_output,
 )
 from scripts.build_helper_runtime import build_runtime_archive
 
@@ -266,6 +274,64 @@ def test_maps_fixed_native_error_without_response_content() -> None:
     assert caught.value.native_code == -13
 
 
+def test_parses_strict_snapshot_capture_result() -> None:
+    payload = {
+        "event": "snapshot_capture",
+        "ok": True,
+        "frames": 3,
+        "bytes": 120_000,
+        "capture_bytes": 80_000,
+        "sps": 1,
+        "pps": 1,
+        "idr": 1,
+        "width": 1920,
+        "height": 1080,
+        "estimated_fps": 12.5,
+        "first_frame_ms": 200,
+        "session_mode": "lan",
+        "clean_shutdown": True,
+    }
+
+    result = parse_snapshot_capture_output(json.dumps(payload).encode())
+
+    assert result.capture_bytes == 80_000
+    assert result.width == 1920
+    assert result.clean_shutdown
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"capture_bytes": 0},
+        {"capture_bytes": 4 * 1024 * 1024 + 1},
+        {"uid": "forbidden"},
+        {"sps": 0},
+        {"clean_shutdown": False},
+    ],
+)
+def test_rejects_invalid_snapshot_capture_result(update: dict[str, object]) -> None:
+    payload: dict[str, object] = {
+        "event": "snapshot_capture",
+        "ok": True,
+        "frames": 3,
+        "bytes": 120_000,
+        "capture_bytes": 80_000,
+        "sps": 1,
+        "pps": 1,
+        "idr": 1,
+        "width": 1920,
+        "height": 1080,
+        "estimated_fps": 12.5,
+        "first_frame_ms": 200,
+        "session_mode": "lan",
+        "clean_shutdown": True,
+    }
+    payload.update(update)
+
+    with pytest.raises(OwletHelperProtocolError):
+        parse_snapshot_capture_output(json.dumps(payload).encode())
+
+
 def test_parses_complete_library_probe() -> None:
     libraries = (
         "libAVAPIs.so",
@@ -445,6 +511,35 @@ async def test_process_runner_reports_missing_executable_safely(tmp_path: Path) 
         await runner.async_run((tmp_path / "missing",), timeout_seconds=1, cwd=tmp_path)
 
 
+async def test_process_runner_passes_only_explicit_media_descriptor(
+    tmp_path: Path,
+) -> None:
+    runner = OwletHelperProcessRunner()
+    read_descriptor, write_descriptor = os.pipe()
+    command = (
+        sys.executable,
+        "-c",
+        "import os,sys; os.write(int(sys.argv[1]), b'capture')",
+        str(write_descriptor),
+    )
+    try:
+        result = await runner.async_run(
+            command,
+            timeout_seconds=5,
+            cwd=tmp_path,
+            pass_fds=(write_descriptor,),
+        )
+        os.close(write_descriptor)
+        write_descriptor = -1
+
+        assert result.returncode == 0
+        assert os.read(read_descriptor, 7) == b"capture"
+    finally:
+        os.close(read_descriptor)
+        if write_descriptor >= 0:
+            os.close(write_descriptor)
+
+
 def _library_probe_output() -> bytes:
     libraries = (
         "libAVAPIs.so",
@@ -481,10 +576,32 @@ def _frame_probe_output() -> bytes:
     ).encode()
 
 
+def _snapshot_capture_output(capture_bytes: int) -> bytes:
+    return json.dumps(
+        {
+            "event": "snapshot_capture",
+            "ok": True,
+            "frames": 3,
+            "bytes": capture_bytes,
+            "capture_bytes": capture_bytes,
+            "sps": 1,
+            "pps": 1,
+            "idr": 1,
+            "width": 1920,
+            "height": 1080,
+            "estimated_fps": 12.5,
+            "first_frame_ms": 200,
+            "session_mode": "lan",
+            "clean_shutdown": True,
+        }
+    ).encode()
+
+
 def _runtime_tree(root: Path) -> None:
     files = (
         "bin/frame_probe",
         "bin/probe_libraries",
+        "bin/snapshot_capture",
         "runtime/bin/linker64",
         "runtime/lib64/libc.so",
         "runtime/lib64/libdl.so",
@@ -610,6 +727,316 @@ async def test_frame_probe_is_gated_until_libraries_pass(
     assert caught.value.code == "runtime_not_ready"
 
 
+async def test_runtime_manager_captures_decodes_and_deletes_private_gop(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    runtime_root = tmp_path / "runtime" / "current"
+    _runtime_tree(runtime_root)
+    prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.5.0-test", architecture="aarch64", root=runtime_root
+        ),
+        library_directory=tmp_path / "extracted",
+        libraries=(),
+        source_sha256="0" * 64,
+    )
+    captured = b"\x00\x00\x00\x01\x67fixture-h264"
+    runner = AsyncMock(spec=OwletHelperProcessRunner)
+
+    async def run_helper(*_args: object, **kwargs: object) -> HelperProcessResult:
+        descriptor = kwargs["pass_fds"][0]  # type: ignore[index]
+        os.write(descriptor, captured)
+        return HelperProcessResult(
+            returncode=0, stdout=_snapshot_capture_output(len(captured))
+        )
+
+    runner.async_run.side_effect = run_helper
+    client = AsyncMock(spec=OwletCloudClient)
+    client.async_get_camera_credentials.return_value = OwletCameraCredentials(
+        uid="fixture-uid",
+        auth_key="fixture-auth-key",
+        av_password="fixture-av-password",  # noqa: S106 - sanitized fixture
+    )
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=client,
+        camera_identifier="OCD123456789",
+        runner=runner,
+    )
+    manager._prepared = prepared
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+    capture_path: Path | None = None
+
+    async def decode(path: Path) -> bytes:
+        nonlocal capture_path
+        capture_path = path
+        contents = await hass.async_add_executor_job(path.read_bytes)
+        mode = await hass.async_add_executor_job(lambda: path.stat().st_mode)
+        assert contents == captured
+        assert mode & 0o777 == 0o600
+        return b"\xff\xd8fixture-jpeg\xff\xd9"
+
+    image = await manager.async_capture_snapshot(decode)
+
+    assert image == b"\xff\xd8fixture-jpeg\xff\xd9"
+    assert capture_path is not None
+    assert not await hass.async_add_executor_job(capture_path.exists)
+    assert manager.snapshot.status == "ready"
+    assert manager.snapshot.last_snapshot_width == 1920
+    assert manager.snapshot.last_snapshot_height == 1080
+    call = runner.async_run.await_args
+    assert call.args[0][1].endswith("bin/snapshot_capture")
+    assert call.kwargs["pass_fds"]
+    command_line = " ".join(str(part) for part in call.args[0])
+    environment = json.dumps(call.kwargs["environment"])
+    for secret in (
+        "fixture-uid",
+        "fixture-auth-key",
+        "fixture-av-password",
+    ):
+        assert secret not in command_line
+        assert secret not in environment
+
+
+async def test_runtime_manager_rejects_missing_snapshot_output_and_cleans_file(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    runtime_root = tmp_path / "runtime" / "current"
+    _runtime_tree(runtime_root)
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+        runner=AsyncMock(spec=OwletHelperProcessRunner),
+    )
+    manager._prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.5.0-test", architecture="aarch64", root=runtime_root
+        ),
+        library_directory=tmp_path / "extracted",
+        libraries=(),
+        source_sha256="0" * 64,
+    )
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+    manager._client.async_get_camera_credentials.return_value = (
+        OwletCameraCredentials(
+            uid="fixture-uid",
+            auth_key="fixture-auth-key",
+            av_password="fixture-av-password",  # noqa: S106
+        )
+    )
+    manager._runner.async_run.return_value = HelperProcessResult(
+        returncode=0, stdout=_snapshot_capture_output(100)
+    )
+
+    with pytest.raises(OwletRuntimeError) as caught:
+        await manager.async_capture_snapshot(AsyncMock(return_value=b"unused"))
+
+    assert caught.value.code == "snapshot_capture_failed"
+    assert manager.snapshot.status == "ready"
+    assert manager.snapshot_available
+    snapshot_directory = tmp_path / "userfiles" / "tmp"
+    files = await hass.async_add_executor_job(
+        lambda: list(snapshot_directory.glob("snapshot-*.h264"))
+    )
+    assert not files
+
+
+@pytest.mark.parametrize(
+    ("cloud_error", "expected_code"),
+    [
+        (OwletRateLimitError("limited"), "cloud_rate_limited"),
+        (OwletAuthenticationError(), "reauthentication_required"),
+        (OwletConnectionError(), "cloud_connection_failed"),
+        (OwletCameraNotFoundError(), "camera_unavailable"),
+    ],
+)
+async def test_snapshot_cloud_failure_is_safe_and_retryable(
+    hass: HomeAssistant,
+    tmp_path: Path,
+    cloud_error: Exception,
+    expected_code: str,
+) -> None:
+    runtime_root = tmp_path / "runtime" / "current"
+    _runtime_tree(runtime_root)
+    client = AsyncMock(spec=OwletCloudClient)
+    client.async_get_camera_credentials.side_effect = cloud_error
+    runner = AsyncMock(spec=OwletHelperProcessRunner)
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=client,
+        camera_identifier="OCD123456789",
+        runner=runner,
+    )
+    manager._prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.5.0-test", architecture="aarch64", root=runtime_root
+        ),
+        library_directory=tmp_path / "extracted",
+        libraries=(),
+        source_sha256="0" * 64,
+    )
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+
+    with pytest.raises(OwletRuntimeError) as caught:
+        await manager.async_capture_snapshot(AsyncMock(return_value=b"unused"))
+
+    assert caught.value.code == expected_code
+    assert manager.snapshot.last_error_code == expected_code
+    assert manager.snapshot.status == "ready"
+    assert manager.snapshot_available
+    runner.async_run.assert_not_called()
+    snapshot_directory = tmp_path / "userfiles" / "tmp"
+    assert not list(snapshot_directory.glob("snapshot-*.h264"))
+
+
+async def test_snapshot_decode_timeout_is_safe_and_retryable(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    runtime_root = tmp_path / "runtime" / "current"
+    _runtime_tree(runtime_root)
+    captured = b"\x00\x00\x00\x01\x67fixture-h264"
+    runner = AsyncMock(spec=OwletHelperProcessRunner)
+
+    async def run_helper(*_args: object, **kwargs: object) -> HelperProcessResult:
+        os.write(kwargs["pass_fds"][0], captured)  # type: ignore[index]
+        return HelperProcessResult(
+            returncode=0, stdout=_snapshot_capture_output(len(captured))
+        )
+
+    runner.async_run.side_effect = run_helper
+    client = AsyncMock(spec=OwletCloudClient)
+    client.async_get_camera_credentials.return_value = OwletCameraCredentials(
+        uid="fixture-uid",
+        auth_key="fixture-auth-key",
+        av_password="fixture-av-password",  # noqa: S106
+    )
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=client,
+        camera_identifier="OCD123456789",
+        runner=runner,
+    )
+    manager._prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.5.0-test", architecture="aarch64", root=runtime_root
+        ),
+        library_directory=tmp_path / "extracted",
+        libraries=(),
+        source_sha256="0" * 64,
+    )
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+
+    with pytest.raises(OwletRuntimeError) as caught:
+        await manager.async_capture_snapshot(
+            AsyncMock(side_effect=TimeoutError("fixture timeout"))
+        )
+
+    assert caught.value.code == "snapshot_decode_timeout"
+    assert manager.snapshot.last_error_code == "snapshot_decode_timeout"
+    assert manager.snapshot.status == "ready"
+    assert manager.snapshot_available
+    assert not list((tmp_path / "userfiles" / "tmp").glob("snapshot-*.h264"))
+
+
+async def test_frame_probe_cloud_failure_has_safe_error_state(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    runtime_root = tmp_path / "runtime" / "current"
+    _runtime_tree(runtime_root)
+    client = AsyncMock(spec=OwletCloudClient)
+    client.async_get_camera_credentials.side_effect = OwletRateLimitError("limited")
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=client,
+        camera_identifier="OCD123456789",
+        runner=AsyncMock(spec=OwletHelperProcessRunner),
+    )
+    manager._prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.5.0-test", architecture="aarch64", root=runtime_root
+        ),
+        library_directory=tmp_path / "extracted",
+        libraries=(),
+        source_sha256="0" * 64,
+    )
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+
+    with pytest.raises(OwletRuntimeError) as caught:
+        await manager.async_run_frame_probe()
+
+    assert caught.value.code == "cloud_rate_limited"
+    assert manager.snapshot.last_error_code == "cloud_rate_limited"
+    assert manager.snapshot.status == "error"
+
+
+async def test_runtime_shutdown_during_snapshot_cannot_restore_ready_state(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    runtime_root = tmp_path / "runtime" / "current"
+    _runtime_tree(runtime_root)
+    runner = AsyncMock(spec=OwletHelperProcessRunner)
+    started = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def run_helper(*_args: object, **_kwargs: object) -> HelperProcessResult:
+        started.set()
+        await stopped.wait()
+        raise OwletHelperProcessError("stopped")
+
+    async def stop_helper() -> None:
+        stopped.set()
+
+    runner.async_run.side_effect = run_helper
+    runner.async_stop.side_effect = stop_helper
+    client = AsyncMock(spec=OwletCloudClient)
+    client.async_get_camera_credentials.return_value = OwletCameraCredentials(
+        uid="fixture-uid",
+        auth_key="fixture-auth-key",
+        av_password="fixture-av-password",  # noqa: S106
+    )
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=client,
+        camera_identifier="OCD123456789",
+        runner=runner,
+    )
+    manager._prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.5.0-test", architecture="aarch64", root=runtime_root
+        ),
+        library_directory=tmp_path / "extracted",
+        libraries=(),
+        source_sha256="0" * 64,
+    )
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+    task = asyncio.create_task(
+        manager.async_capture_snapshot(
+            AsyncMock(return_value=b"\xff\xd8fixture-jpeg\xff\xd9")
+        )
+    )
+    await started.wait()
+
+    await manager.async_shutdown()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert manager.snapshot.status == "stopped"
+    assert not manager.snapshot_available
+
+
 def test_yellow_architecture_alias_is_supported(
     hass: HomeAssistant, tmp_path: Path
 ) -> None:
@@ -656,9 +1083,11 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(f"open-source-{relative}".encode())
     frame_probe = tmp_path / "frame_probe"
+    snapshot_capture = tmp_path / "snapshot_capture"
     library_probe = tmp_path / "probe_libraries"
     notice = tmp_path / "NOTICE.html.gz"
     frame_probe.write_bytes(b"clean-room-frame-helper")
+    snapshot_capture.write_bytes(b"clean-room-snapshot-helper")
     library_probe.write_bytes(b"clean-room-library-helper")
     notice.write_bytes(b"open-source-notices")
     first = tmp_path / "first.tar.gz"
@@ -666,6 +1095,7 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
 
     first_hash = build_runtime_archive(
         frame_probe=frame_probe,
+        snapshot_capture=snapshot_capture,
         library_probe=library_probe,
         runtime_root=runtime,
         aosp_notice=notice,
@@ -673,6 +1103,7 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
     )
     second_hash = build_runtime_archive(
         frame_probe=frame_probe,
+        snapshot_capture=snapshot_capture,
         library_probe=library_probe,
         runtime_root=runtime,
         aosp_notice=notice,
@@ -702,7 +1133,7 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
         runtime_parent=tmp_path / "runtime-install",
     )
     assert installed.root.name == "current"
-    assert installed.version == "0.4.0-dev"
+    assert installed.version == "0.5.0-dev"
 
 
 def test_runtime_installer_rejects_bad_checksum_and_traversal(tmp_path: Path) -> None:

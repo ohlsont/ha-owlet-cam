@@ -63,8 +63,34 @@ All notable changes are documented here. Versions follow semantic versioning.
   1920×1080 in `lan` mode. Both had SPS/PPS/IDR and clean shutdown. Direct
   process-list checks after the runtime probe and both frame probes found no
   orphan helper, completing the Milestone 4 bounded frame-probe gate.
-- Snapshot, RTSP/live streaming, camera-entity, Dream uninterrupted-view, and
-  physical outage validation remain unperformed.
+- RTSP/live streaming, Dream uninterrupted-view, and physical outage
+  validation remain unperformed.
+- Implemented the local Milestone 5 snapshot path: a separate clean-room helper
+  writes one decodable SPS/PPS/IDR access unit only through an inherited file
+  descriptor; the integration keeps the temporary H.264 file mode 0600, decodes
+  it with Home Assistant's pinned FFmpeg component, validates JPEG framing,
+  caches briefly, serializes concurrent requests, and cancels work on unload.
+- Added a snapshot-only camera entity with zero stream feature flags plus tests
+  for capture protocol strictness, inherited descriptors, invalid output,
+  decode timeout, concurrent callers, caching, cleanup, shutdown races and
+  secret-free FFmpeg arguments.
+- Deployed the checksum-verified helper 0.5.0-dev runtime on Yellow. Home
+  Assistant displayed real 1920×1080 and 864×480 JPEGs; ten sequential calls,
+  two simultaneous callers and the standard `camera.snapshot` service passed.
+- Repeated cache-expired test captures reached Owlet's KMS rate limit and
+  exposed a stuck runtime status. The correction maps typed cloud and decode
+  failures to redacted safe codes, cleans temporary files, and leaves the
+  validated snapshot path retryable. Regression coverage includes rate-limit,
+  authentication, connection, camera-not-found and decode-timeout failures.
+- Completed the Milestone 5 Yellow gate: the user confirmed Dream reclaimed
+  live video; simultaneous in-app-browser and Chrome clients both displayed the
+  camera after a concurrent reload; and a 30-minute periodic dashboard-snapshot
+  soak reduced Core memory from 815,271,936 to 801,710,080 bytes. Zero Repairs
+  and no new Owlet system-log entry were present afterward.
+- Deleted the verified `camera.snapshot` test artefact from Yellow and the Mac.
+  Direct Core-PID orphan enumeration remains explicitly unperformed because the
+  supported SSH add-on lacks that namespace; no host PID, Docker, privileged or
+  security-weakening workaround was used.
 
 ## [0.2.0] - Unreleased
 

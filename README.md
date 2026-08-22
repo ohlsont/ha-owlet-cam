@@ -74,8 +74,23 @@ valid frames at 640×360; after Dream closed, a second probe immediately
 reacquired 100 valid frames at 1920×1080. Both shut down cleanly, and direct
 process-list checks found no orphan helper.
 
+Milestone 5's snapshot-only gate now passes on Yellow. A separate snapshot
+helper waits for one Annex-B access unit
+containing SPS, PPS and IDR, writes it only to a private inherited file
+descriptor, and exits after clean session teardown. Home Assistant decodes the
+private mode-0600 temporary H.264 file with its pinned FFmpeg component,
+validates JPEG framing, caches the result for five seconds, and serializes
+concurrent requests. Yellow produced visible 1920×1080 and 864×480 JPEGs; ten
+sequential calls, two simultaneous API callers, two independent dashboard
+clients and `camera.snapshot` passed. During a 30-minute periodic dashboard
+snapshot soak, Core memory decreased by 1.66%, and the user confirmed Dream
+reclaimed live video afterward. The camera entity claims no stream feature.
+Direct process enumeration inside the Core PID namespace remains unperformed:
+the supported SSH add-on cannot see that namespace, and no host-PID, Docker or
+privileged workaround was enabled.
+
 A deterministic package script now creates a checksum-manifested ARM64 runtime
-containing only the two clean-room helpers, a minimal pinned AOSP Bionic runtime,
+containing only the three clean-room helpers, a minimal pinned AOSP Bionic runtime,
 and licence notices. The current local archive was scanned against configured
 secrets and common token patterns; no user application or proprietary library
 is included. It remains a local test artefact until the Yellow gate passes and
@@ -136,9 +151,10 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 
 ## Known limitations
 
-- No camera entity, bridge connection, snapshot, RTSP source, or Home Assistant
-  stream. Native connection and bounded raw-frame probes work on Yellow, but no
-  continuous media source exists yet.
+- The embedded snapshot-only camera and standard `camera.snapshot` service have
+  passed their real JPEG, concurrency, periodic-soak and official-app recovery
+  gates on Yellow. There is no bridge connection, RTSP source, or continuous
+  Home Assistant stream.
 - Cloud/KMS behavior has comprehensive sanitized fixture coverage and succeeded
   inside Home Assistant Core on Yellow. Wrong-password reauthentication and the
   complete Milestone 1 acceptance sequence remain unperformed.

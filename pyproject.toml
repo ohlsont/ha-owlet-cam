@@ -20,12 +20,14 @@ classifiers = [
 
 [dependency-groups]
 dev = [
+  "ha-ffmpeg==3.2.2",
   "homeassistant>=2024.11.0",
   "mypy>=1.17.0",
   "pytest>=8.4.0",
   "pytest-asyncio>=1.1.0",
   "pytest-cov>=6.2.0",
   "pytest-homeassistant-custom-component>=0.13.264",
+  "PyTurboJPEG==1.8.3",
   "ruff>=0.12.0",
 ]
 
@@ -77,6 +79,6 @@ warn_unused_ignores = true
 exclude = ["tests/"]
 
 [[tool.mypy.overrides]]
-module = ["homeassistant.*", "voluptuous"]
+module = ["haffmpeg.*", "homeassistant.*", "voluptuous"]
 ignore_missing_imports = true
 follow_imports = "skip"

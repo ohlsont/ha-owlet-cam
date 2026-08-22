@@ -1374,12 +1374,25 @@ wheels = [
 ]
 
 [[package]]
+name = "ha-ffmpeg"
+version = "3.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "async-timeout" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1e/3b/bd1284a9bc39cc119b0da551a81be6cf30dc3cfb369ce8c62fb648d7a2ea/ha_ffmpeg-3.2.2.tar.gz", hash = "sha256:80e4a77b3eda73df456ec9cc3295a898ed7cbb8cd2d59798f10e8c10a8e6c401", size = 7608, upload-time = "2024-11-08T13:32:14.181Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/45/66/7863e5a3713bb71c02f050f14a751b02e7a2d50eaf2109c96a1202e65d8b/ha_ffmpeg-3.2.2-py3-none-any.whl", hash = "sha256:4fd4a4f4cdaf3243d2737942f3f41f141e4437d2af1167655815dc03283b1652", size = 8749, upload-time = "2024-11-08T13:32:12.69Z" },
+]
+
+[[package]]
 name = "ha-owlet-cam"
 version = "0.2.0"
 source = { editable = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "ha-ffmpeg" },
     { name = "homeassistant", version = "2026.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14.2'" },
     { name = "homeassistant", version = "2026.8.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14.2'" },
     { name = "mypy" },
@@ -1391,6 +1404,7 @@ dev = [
     { name = "pytest-cov", version = "7.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14.2'" },
     { name = "pytest-homeassistant-custom-component", version = "0.13.316", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14.2'" },
     { name = "pytest-homeassistant-custom-component", version = "0.13.356", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14.2'" },
+    { name = "pyturbojpeg" },
     { name = "ruff" },
 ]
 
@@ -1398,12 +1412,14 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "ha-ffmpeg", specifier = "==3.2.2" },
     { name = "homeassistant", specifier = ">=2024.11.0" },
     { name = "mypy", specifier = ">=1.17.0" },
     { name = "pytest", specifier = ">=8.4.0" },
     { name = "pytest-asyncio", specifier = ">=1.1.0" },
     { name = "pytest-cov", specifier = ">=6.2.0" },
     { name = "pytest-homeassistant-custom-component", specifier = ">=0.13.264" },
+    { name = "pyturbojpeg", specifier = "==1.8.3" },
     { name = "ruff", specifier = ">=0.12.0" },
 ]
 
@@ -3137,6 +3153,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/87/c7/5e1547c44e31da50a
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a4/62/02da182e544a51a5c3ccf4b03ab79df279f9c60c5e82d5e8bec7ca26ac11/python_slugify-8.0.4-py2.py3-none-any.whl", hash = "sha256:276540b79961052b66b7d116620b36518847f52d5fd9e3a70164fc8c50faa6b8", size = 10051, upload-time = "2024-02-08T18:32:43.911Z" },
 ]
+
+[[package]]
+name = "pyturbojpeg"
+version = "1.8.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f2/2b/5fc7a7f51af947708a5d75d7637e923d2d4e60f43f6a4cfe55ae1ea241a2/pyturbojpeg-1.8.3.tar.gz", hash = "sha256:c131591a3990cc57f45a8b2705d6261c25df913a19b1fe88de5e911dbe04a1d4", size = 12757, upload-time = "2026-02-17T02:32:53.192Z" }
 
 [[package]]
 name = "pytz"
