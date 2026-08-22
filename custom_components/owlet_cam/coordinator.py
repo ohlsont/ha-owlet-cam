@@ -49,7 +49,9 @@ class OwletCamCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._client is None or self._camera_dsn is None:
             return {"status": STATUS_READY}
         try:
-            metadata = await self._client.async_validate_camera(self._camera_dsn)
+            metadata = await self._client.async_validate_configured_camera(
+                self._camera_dsn
+            )
         except OwletAuthenticationError as err:
             raise ConfigEntryAuthFailed("Owlet account authentication failed") from err
         except OwletRateLimitError as err:

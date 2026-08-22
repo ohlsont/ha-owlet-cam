@@ -5,27 +5,146 @@ or real-system evidence.
 
 | Milestone | Commit | Integration version | Home Assistant version | Home Assistant OS version | Architecture | Camera model | Camera firmware | Automated tests | Yellow test | Real camera test | Result | Evidence | Unperformed tests | Known issues |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0 — HACS scaffold and lifecycle | `67fae5f` | 0.1.0 | 2026.8.2 current; 2024.5.0 minimum at that milestone | HAOS 18.2 identified through authenticated read-only HA-MCP health evidence | AArch64 Home Assistant Yellow identified; integration not installed | None | None | **Passed locally:** original 6-test lifecycle suite; later Milestone 1 suite continues to cover lifecycle | Unperformed | Not applicable | **Automated gate passed; public HACS installation deferred by user** | Local commands and read-only system-health evidence on 2026-08-21 | HACS Action, Hassfest in GitHub context, and the ten physical install/lifecycle/log checks | Public repository intentionally deferred until core functionality works |
-| 1 — Cloud authentication and KMS | `probe/local-video` working tree | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 target identified; integration not installed | AArch64 Yellow target; tests executed on arm64 macOS | Owlet Cam 1, user-reported; not hardware-verified | Not established | **Passed locally:** 85 tests at 90.29% branch-aware coverage; Ruff, mypy, secret and release checks passed | Unperformed | Unperformed | **EMEA authentication passed locally; KMS gate failed with HTTP 403** | The exact identifier was confirmed from Dream device information, the same primary account originally paired the camera and can view its stream, and EMEA SSO returned 200. Raw-token, Bearer-token, APK-observed generic-header, and post-SSO refreshed-token KMS trials all returned 403 without camera credentials | Successful KMS lookup, diagnostics/log search, wrong-password correction on Yellow, physical model verification, camera connection and all media tests | KMS denies this primary account/device combination despite the official app having access; a server-side device mapping or undocumented authorization dependency remains unresolved |
+| 0 — HACS scaffold and lifecycle | `67fae5f` | 0.1.0 | 2026.8.2 current; 2024.5.0 minimum at that milestone | HAOS 18.2 | AArch64 Home Assistant Yellow; private manual install | None | None | **Passed locally:** original 6-test lifecycle suite; later suites continue to cover lifecycle | **Partial:** manual setup, reload, unload, re-enable, restart, entity removal/restoration, and clean Owlet logs passed | Not applicable | **Lifecycle gate passed; HACS-installation gate deferred by user** | Local tests plus authenticated HA-MCP lifecycle evidence on 2026-08-22 | HACS custom-repository acceptance, HACS Action and Hassfest in GitHub context | Public repository intentionally deferred until core functionality works |
+| 1 — Cloud authentication and KMS | `probe/local-video` working tree | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 | AArch64 Yellow | Owlet Cam 1, user-reported; not hardware-verified | Not established | **Passed locally:** current full suite 125 tests at 86.49% branch-aware coverage; Ruff and mypy passed | **Partial:** manual install, setup, reload, entities, cloud/KMS, and redacted diagnostics passed | **Passed on Yellow:** EMEA authentication, authorized camera discovery, and KMS credential-presence validation | **Cloud/KMS Yellow core path passed; full Milestone 1 gate incomplete** | Loaded config entry; cloud and credential booleans on; diagnostics redacted email, password and camera identifier | HACS installation and wrong-password reauthentication correction | The app-visible serial differs from the internal KMS DSN; the production client resolves this relationship while keeping the internal value in memory only |
 | 2 — External bridge | — | — | — | — | — | — | — | Unperformed | Unperformed | Unperformed | Not started | — | All | Blocked by Milestone 0 gate |
-| 3–8 — Embedded runtime through stable release | `probe/local-video` working tree | 0.2.0 base; no embedded release | Not applicable to local spike | Not applicable to local spike | ARM64 macOS host; Linux/ARM64 Docker target | Not established | Not established | **Partial feasibility evidence:** 17 focused archive/ELF tests; full suite 85 passed at 90.29% coverage; Ruff, mypy, release and secret checks passed | Unperformed | Unperformed | **Local extraction and Bionic load sub-gates passed; no embedded milestone gate passed** | Local commands on 2026-08-21; exact redacted results below | Successful KMS handoff, camera connection, frames, FFprobe, in-Core Yellow runtime/lifecycle | User explicitly prioritized proving real local video before Home Assistant installation; previous stable work remains on `build/milestone-1` |
+| 3 — Embedded ARM64 runtime probe | `probe/local-video` working tree | 0.2.0 base; helper 0.4.0-dev; no embedded release | Core 2026.8.2 | HAOS 18.2 | Yellow AArch64; ARM64 macOS/Docker/emulator local targets | Owlet Cam 1, user-reported | Not established | **Passed locally:** full suite 125 passed at 86.49% coverage; Ruff and mypy passed | **Passed native capability gate after correction:** runtime `ready`, all five required libraries loaded, unload/re-enable and restart recovered cleanly | No-camera library probe passed on Yellow; no camera connection attempted | **Yellow native runtime gate passed; release-distribution checks remain** | Helper 0.4.0-dev, compatibility `true`, no safe error, Core `RUNNING`, zero Repairs, no new code-137 exit, clean entry unload/re-enable/restart | HACS release asset download, direct `ps` orphan capture, separate `probe_runtime` command, detected APK version reporting, GitHub release build | Initial in-memory extraction caused code 137; disk-spooling correction passed. Restart was unusually slow and the user performed an additional manual restart; final setup was clean |
+| 4 — Embedded connection and frame probe | `probe/local-video` working tree | Development-only; no embedded release | Not applicable to local spike | Not applicable to local spike | Android 15 ARM64 emulator on ARM64 macOS | Owlet Cam 1, user-reported | Not established | Full 122-test suite at 86.47% coverage, Ruff, and mypy passed | Unperformed | **Passed locally:** required repeated 100-frame H.264 probes, newly rebuilt-helper confirmation, and Dream recovery | **Local real-frame and session-release sub-gates passed; Yellow gate unperformed** | Exact redacted statistics are recorded below; every run contained SPS, PPS and IDR NALs, parsed 1920×1080, and reported clean shutdown; user confirmed working Dream video after the probes | Yellow execution, session-mode observation, enabled Home Assistant controls, and official-app-open-before-probe behavior | Docker/OrbStack IOTC timed out with `-13`; the same helper connected under the emulator's native Bionic/network environment, so Docker network compatibility remains unresolved |
+| 5–8 — Snapshot through stable release | — | — | — | — | — | — | — | Unperformed | Unperformed | Unperformed | Not started | — | All | Blocked until the complete Milestone 4 acceptance gate passes |
 
 ## Milestone 0 Yellow validation fields
 
 | Field | Evidence |
 |---|---|
-| Home Assistant version | Core 2026.8.2 identified through authenticated read-only HA-MCP system health; integration test unperformed |
-| Home Assistant OS version | 18.2 identified through authenticated read-only HA-MCP system health |
-| HACS version | 2.0.5 identified through authenticated read-only HA-MCP system health |
-| Machine architecture | AArch64, board Yellow, identified through authenticated read-only HA-MCP system health |
-| Install result | Unperformed |
-| Setup result | Unperformed |
-| Unload result | Unperformed |
-| Reload result | Unperformed |
-| Log result | Unperformed |
+| Home Assistant version | Core 2026.8.2 |
+| Home Assistant OS version | 18.2 |
+| HACS version | 2.0.5; custom-repository installation unperformed |
+| Machine architecture | AArch64, board Yellow |
+| Install result | Private manual installation succeeded; HACS installation unperformed |
+| Setup result | Entry reached `loaded`; diagnostic entities appeared |
+| Unload result | Entry reached `not_loaded`; runtime entity disappeared |
+| Reload result | Config-entry reload, re-enable, and restart restored `loaded` without duplicate entities observed |
+| Log result | Only Home Assistant's standard unverified-custom-integration warning; no Owlet exception/warning |
 
-No HACS acceptance, Yellow installation, physical outage, media frame, snapshot,
-or stream claim is made by this report.
+No HACS acceptance, Yellow installation, physical outage, Home Assistant camera,
+snapshot, RTSP, or live-dashboard stream claim is made by this report. The only
+media claim is the isolated local frame-probe evidence recorded below.
+
+## Yellow live validation — 2026-08-22
+
+- Home Assistant MCP configured Terminal & SSH temporarily with one ED25519
+  public key, an empty password, TCP forwarding disabled, and LAN port 22222.
+  The integration/runtime archive and separate user-supplied application were
+  transferred to the user's own Yellow. Both remote SHA-256 values matched the
+  local originals. MCP then removed the key and port mapping, restarted the app,
+  and confirmed zero authorized keys, no password, TCP forwarding false, and a
+  null SSH port. A LAN connection check confirmed the port was closed.
+- Home Assistant's configuration check was valid before restart. Core 2026.8.2
+  restarted without an Owlet import error and reached `RUNNING`. The manually
+  installed `owlet_cam` entry reached `loaded`; a config-entry-only reload
+  succeeded without a full restart.
+- Real EMEA authentication, authorized Firestore camera discovery, and regional
+  KMS validation succeeded inside Home Assistant Core on Yellow. Eleven enabled
+  diagnostic entities appeared. Cloud reachable and credential presence were
+  on. Serialized diagnostics redacted email, password, and camera identifier and
+  exposed only safe booleans/timestamps; no runtime secret was present.
+- The disabled-by-default runtime button was enabled for a no-camera probe. The
+  MCP connection dropped during the service call. Supervisor later recorded
+  Core exiting with code 137 at 13:14:28 and restarting automatically; Matter
+  Server also exited 137 twice in the same interval. The recorder reported an
+  unclean shutdown. No native probe success response exists, so the runtime gate
+  failed. Core recovered to `RUNNING`, the cloud entry returned to `loaded`, and
+  the probe button was disabled again.
+- Inspection found the 148 MiB nested application split was copied into
+  `BytesIO` by the original extractor. The implementation now streams nested
+  APKs into mode-0600 temporary files and assigns extraction directories a
+  per-Core-process session, cleaning only previous-process remnants. The real
+  package completed the corrected local extraction in 1.58 seconds. Automated
+  validation after both fixes: 125 tests, 86.49% branch-aware coverage, Ruff,
+  mypy, secret scan, release validation, and diff whitespace checks all passed.
+- Both corrected source files were transferred and checksum-verified on Yellow,
+  SSH was closed again, and Core restarted to load them. Before correction the
+  Yellow reported 1,886 MiB total RAM, 437 MiB available, and 599 MiB of 1,024
+  MiB swap in use.
+- After explicit approval of the restart risk, one corrected button press was
+  issued. It caused no MCP disconnect and Supervisor recorded no Core exit newer
+  than the original 13:14:28 code-137 event. The press nevertheless overlapped
+  the config-entry reload used to enable the button: the replacement runtime
+  entities were written at 13:33:09 with a new manager reporting
+  `not_prepared`, so no library result survived. This is an inconclusive attempt,
+  not a pass or a native-library failure. No second press was issued. The button
+  was disabled, the entry settled in `loaded`, Core remained `RUNNING`, and
+  Repairs remained empty.
+- After a second explicit approval, the entry was reloaded and allowed to settle
+  for more than 60 seconds. The replacement entity timestamps were verified
+  before exactly one press. The service completed in about 19 seconds. The
+  strict helper parser accepted successful events for all five required native
+  libraries and a zero-failure completion event. Entities reported runtime
+  `ready`, helper `0.4.0-dev`, and native compatibility `on`; diagnostics
+  reported compatibility `true` and no safe error code. Core remained
+  `RUNNING`, Repairs remained empty, and Supervisor showed no exit newer than
+  the original 13:14:28 failure. The runtime-probe button was disabled again.
+- Disabling the config entry changed it to `not_loaded` and removed its runtime
+  entity. Re-enabling restored the entry to `loaded`, cloud and credential
+  booleans to `on`, and a clean `not_prepared` runtime. Configuration validation
+  passed before restart. The requested restart was unusually slow; the user
+  then restarted manually. Final evidence at 13:58 showed Core `RUNNING`, the
+  Owlet entry `loaded`, cloud/KMS booleans `on`, runtime `not_prepared`, zero
+  Repairs, no stale-runtime error, no new code-137 exit, and only Home
+  Assistant's standard warning for an unverified custom integration. No direct
+  process-list capture was available through MCP, so that check remains marked
+  unperformed rather than inferred.
+
+## Yellow-gate preparation — 2026-08-22
+
+- The authenticated Home Assistant MCP connection identified the live target as
+  Yellow, AArch64, Home Assistant OS 18.2, Core 2026.8.2, Python 3.14.6, and HACS
+  2.0.5. Home Assistant's configuration check was valid and there were no active
+  Repairs issues. This is system-health evidence, not integration-installation
+  evidence.
+- Authorized Firestore serial-to-KMS discovery was moved from the development
+  script into `OwletCloudClient`. Sanitized tests cover one internal camera,
+  direct DSN use, secret-safe credentials, and refusal to guess between multiple
+  devices. The UI can retain the app-visible serial as its unique ID while the
+  different internal KMS DSN remains in memory only.
+- The runtime now has a supervised process-group owner, stdin-only secret input,
+  bounded stdout/stderr, timeout and escalating termination, strict response
+  schemas, SDK-key buffer scrubbing, safe diagnostics, and unload termination.
+  Experimental runtime and frame-probe buttons are disabled by default; the
+  frame button is unavailable until the runtime/library gate succeeds.
+- A new clean-room build produced AArch64 `probe_libraries` SHA-256
+  `b716768c79094af418d6a944e47aa65aa8bc9a2b009fdf0414718b282b8b8f6b`
+  and `frame_probe` SHA-256
+  `6df9db4052ccfec0debccd0e78dc4c2c8b5a7a6e7b46e7afb86360cd24b9f86b`.
+  Both are PIE executables using `/runtime/bin/linker64`, depend only on Bionic
+  `libc.so`/`libdl.so`, and have no writable-executable segment.
+- The rebuilt no-camera helper loaded all five user-supplied libraries in the
+  ARM64 emulator and returned five `ok: true` events plus a successful completion
+  event. The rebuilt frame helper then received 100 real H.264 frames, 448,301
+  bytes, 7 SPS, 7 PPS, 7 IDR, 1920×1080, estimated 12.5 FPS, first frame 679 ms,
+  and clean shutdown.
+- `scripts/build_helper_runtime.py` produced a deterministic local ARM64 archive
+  SHA-256
+  `4d6569dc8a4977e2522c6d80664d3cbe20a62048c3b6a650156f80eb42385033`.
+  Its nine members are the two clean-room helpers, four minimal AOSP runtime
+  files, two licence-notice files, and one per-file checksum manifest. The
+  archive passed installation verification and scans for every configured
+  secret plus common JWT, Google-key, and private-key patterns. It contains no
+  Owlet application or proprietary library.
+- The archive's exact Yellow launch shape was exercised in a read-only ARM64
+  Linux container. An initial glibc-style `--library-path` invocation was
+  correctly rejected by Bionic, so the manager was changed before deployment
+  to invoke the explicit linker with a fixed, non-secret `LD_LIBRARY_PATH`.
+  The corrected invocation loaded all five user libraries and returned a
+  successful completion event. Camera credentials remain stdin-only.
+- A temporary, unpublished Yellow deployment archive was assembled for manual
+  transfer through authenticated Studio Code Server. Its SHA-256 is
+  `90ee5557d8555ff51dafba077e73e7cc8b864f760abd1328faa2d9fc3c1330ed`.
+  Its member list contains the integration and proprietary-free runtime only;
+  the user-supplied application remains a separate ignored local file.
+- Current local validation: Ruff passed, mypy passed for 35 source files, and
+  `123 passed` at 86.47% branch-aware coverage. The Yellow runtime and frame
+  probes remain unperformed.
 
 ## Local video feasibility spike — 2026-08-21
 
@@ -42,7 +161,7 @@ or stream claim is made by this report.
   and no implementation source was copied.
 - Clean-room APK safety and ELF inspection prerequisites were implemented on the
   separate `probe/local-video` branch. Current focused validation: `17 passed`.
-  Full validation: Ruff passed, mypy passed for 31 source files, `85 passed` with
+  Full validation: Ruff passed, mypy passed for 34 source files, `92 passed` with
   90.29% branch-aware coverage, secret scan passed for 72 release-source files,
   and release metadata remained valid for 0.2.0 while correctly excluding the
   Git-ignored persistent runtime directory.
@@ -80,9 +199,47 @@ or stream claim is made by this report.
   five `library_probe` responses and `probe_complete` all returned `ok: true`.
   No SDK key, cloud token, KMS value, account credential, or camera session was
   supplied to the process.
-- Camera authentication/KMS handoff, native camera connection, H.264 receipt,
-  FFprobe, subprocess supervision inside Home Assistant Core, and Yellow
-  lifecycle validation remain unperformed. No video claim is made.
+- A fresh Android 15 ARM64 Google Play emulator installed the official Dream
+  3.40.0 (`64832`) package, signed into the user-confirmed EMEA account, found
+  the paired camera, and displayed changing room-video pixels. Two viewport
+  samples five seconds apart differed in 776,003 bytes. This is evidence only
+  for official Dream playback, not for our helper.
+- The current user-supplied Dream 3.40.0 ARM64 bundle had outer SHA-256
+  `64cc825b54e4f59fca3f4dfe90cd01027e3b775144a769334ce1ba216ea04036`.
+  Its five required libraries were byte-for-byte identical to 3.36.0 and again
+  passed the extraction, architecture, symbol, and no-WX checks.
+- A redacted direct-reference Firestore probe resolved the authenticated
+  account document (HTTP 200), one of one service documents (HTTP 200), one of
+  one device documents (HTTP 200), and one internal camera DSN. The configured
+  visible identifier did not equal that internal DSN. KMS lookup using the
+  internal DSN succeeded and returned only `true` presence booleans for UID,
+  AuthKey, and AV password. No identifier or credential value was emitted.
+- The clean-room AArch64 helper accepts SDK key, UID, AuthKey, and AV password
+  in one stdin JSON object, loads user-supplied libraries in a separate process,
+  and emits a fixed safe result schema. Dummy-input validation stopped at the
+  SDK licence gate as expected. Real Docker/OrbStack attempts reached IOTC but
+  timed out with code `-13`; no claim is made for that network environment.
+- Under the Android 15 ARM64 emulator's native Bionic runtime and already-proven
+  network path, three separate real probes succeeded. Probe 1: 100 frames,
+  737,848 bytes, 7 SPS, 7 PPS, 7 IDR, 1920×1080, estimated 12.245 FPS, first
+  frame 839 ms. Probe 2: 100 frames, 733,251 bytes, 7/7/7 SPS/PPS/IDR,
+  1920×1080, estimated 12.292 FPS, first frame 967 ms. Probe 3 immediately
+  followed probe 2: 100 frames, 729,888 bytes, 7/7/7 SPS/PPS/IDR, 1920×1080,
+  estimated 12.790 FPS, first frame 595 ms. Every result reported clean
+  shutdown, and the fixed emulator probe directory was absent afterward.
+- The exact final helper source was rebuilt as AArch64 PIE with SHA-256
+  `723897c1e127a361a15f1c7776ec488da1e5d514c0ff08ae924130f4c14addc7`
+  and confirmed in a fourth run: 100 frames, 760,180 bytes, 7/7/7
+  SPS/PPS/IDR, 1920×1080, estimated 12.278 FPS, first frame 920 ms, and clean
+  shutdown. This temporary binary is not committed or distributed.
+- After all helper probes had exited and the temporary emulator directory was
+  confirmed absent, the user opened Dream and reported that its Android live
+  video worked. This is user-observed evidence that the official app regained
+  the camera session after helper teardown; it is not an official-app-open-
+  during-probe concurrency test.
+- FFprobe, subprocess supervision inside Home Assistant Core, Yellow lifecycle
+  validation, physical outage tests, and official-app-open-during-probe behavior
+  remain unperformed. The Milestone 4 Yellow acceptance gate is not passed.
 
 ## Milestone 1 local automated evidence — 2026-08-21
 
@@ -133,12 +290,16 @@ or stream claim is made by this report.
   field; the corresponding `/devices` resource returned HTTP 404. Only status
   codes, counts, and false equality booleans were emitted. No account ID,
   device value, response body, or token was printed or retained.
-- **Acceptance gate: failed at KMS.** Real EMEA authentication is now proven
-  locally, but camera metadata lookup did not succeed. Native camera connection
-  and frame work must not begin. The unresolved boundary is server-side device
-  mapping or another undocumented authorization dependency. A fresh official
-  Dream installation with no saved camera state is the next useful external
-  comparison; reinstalling the user's working iPhone app is not required.
+- A fresh Dream Android installation exposed the missing relationship through
+  authorized direct Firestore documents: Firebase UID selected the account,
+  `serviceKeys` selected the service, `deviceKey` selected the device, and that
+  device's internal `dsn` selected the KMS camera. Only field names, HTTP
+  statuses, counts, and equality/presence booleans were emitted.
+- **Local cloud/KMS core gate: passed.** Real EMEA authentication and KMS
+  credential presence are proven on the ARM64 Mac. The full Milestone 1 gate is
+  still unperformed because the integration has not yet run through HACS inside
+  Home Assistant Core on Yellow and its required diagnostics/reauth checks have
+  not been executed there.
 - `.venv/bin/ruff format --check .`, `.venv/bin/ruff check .`, and
   `.venv/bin/mypy custom_components scripts`: passed.
 - `scripts/validate_release.py`, `scripts/check_secrets.py`, repository JSON,

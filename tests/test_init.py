@@ -105,12 +105,12 @@ async def test_remove_entry_cleanly(hass: HomeAssistant) -> None:
 
 
 async def test_embedded_setup_unload_and_reload(hass: HomeAssistant) -> None:
-    """Embedded cloud setup owns three cached diagnostic entities."""
+    """Embedded setup reloads cloud and runtime entities without duplicates."""
     entry = _embedded_entry()
     entry.add_to_hass(hass)
     with patch("custom_components.owlet_cam.OwletCloudClient") as client_class:
         validate = AsyncMock(return_value=_metadata())
-        client_class.return_value.async_validate_camera = validate
+        client_class.return_value.async_validate_configured_camera = validate
 
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
@@ -124,8 +124,8 @@ async def test_embedded_setup_unload_and_reload(hass: HomeAssistant) -> None:
 
         assert await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
-        assert len(hass.states.async_entity_ids("binary_sensor")) == 2
-        assert len(hass.states.async_entity_ids("sensor")) == 1
+        assert len(hass.states.async_entity_ids("binary_sensor")) == 4
+        assert len(hass.states.async_entity_ids("sensor")) == 7
 
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
@@ -139,7 +139,7 @@ async def test_temporary_outage_uses_setup_retry(hass: HomeAssistant) -> None:
     entry = _embedded_entry()
     entry.add_to_hass(hass)
     with patch("custom_components.owlet_cam.OwletCloudClient") as client_class:
-        client_class.return_value.async_validate_camera = AsyncMock(
+        client_class.return_value.async_validate_configured_camera = AsyncMock(
             side_effect=OwletConnectionError("safe")
         )
         assert not await hass.config_entries.async_setup(entry.entry_id)
@@ -152,7 +152,7 @@ async def test_invalid_credentials_start_reauthentication(
     entry = _embedded_entry()
     entry.add_to_hass(hass)
     with patch("custom_components.owlet_cam.OwletCloudClient") as client_class:
-        client_class.return_value.async_validate_camera = AsyncMock(
+        client_class.return_value.async_validate_configured_camera = AsyncMock(
             side_effect=OwletAuthenticationError("safe")
         )
         assert not await hass.config_entries.async_setup(entry.entry_id)

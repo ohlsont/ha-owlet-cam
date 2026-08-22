@@ -228,7 +228,7 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
                 password=password,
                 region=region,
             )
-            await client.async_validate_camera(dsn)
+            await client.async_validate_configured_camera(dsn)
         except vol.Invalid:
             return {}, "invalid_email"
         except OwletInvalidDSNError as err:

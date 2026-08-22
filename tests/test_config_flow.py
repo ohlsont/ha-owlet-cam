@@ -139,7 +139,7 @@ async def test_embedded_success_normalizes_and_creates(hass: HomeAssistant) -> N
     with patch(
         "custom_components.owlet_cam.config_flow.OwletCloudClient"
     ) as client_class:
-        client_class.return_value.async_validate_camera = AsyncMock(
+        client_class.return_value.async_validate_configured_camera = AsyncMock(
             return_value=_metadata()
         )
         result = await hass.config_entries.flow.async_init(
@@ -166,7 +166,7 @@ async def test_duplicate_dsn_is_rejected(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.owlet_cam.config_flow.OwletCloudClient"
     ) as client_class:
-        client_class.return_value.async_validate_camera = AsyncMock(
+        client_class.return_value.async_validate_configured_camera = AsyncMock(
             return_value=_metadata()
         )
         result = await hass.config_entries.flow.async_init(
@@ -195,7 +195,7 @@ async def test_flow_recovers_after_each_safe_error(hass: HomeAssistant) -> None:
             "custom_components.owlet_cam.config_flow.OwletCloudClient"
         ) as client_class:
             validate = AsyncMock(side_effect=[exception, _metadata()])
-            client_class.return_value.async_validate_camera = validate
+            client_class.return_value.async_validate_configured_camera = validate
             result = await hass.config_entries.flow.async_init(
                 DOMAIN,
                 context={"source": config_entries.SOURCE_USER},
@@ -258,7 +258,7 @@ async def test_reauthentication_error_then_success_reloads_once(
         ) as client_class,
         patch.object(hass.config_entries, "async_schedule_reload") as schedule_reload,
     ):
-        client_class.return_value.async_validate_camera = AsyncMock(
+        client_class.return_value.async_validate_configured_camera = AsyncMock(
             side_effect=[OwletAuthenticationError("safe"), _metadata()]
         )
         result = await hass.config_entries.flow.async_init(
@@ -299,7 +299,7 @@ async def test_reconfigure_updates_existing_entry_once(hass: HomeAssistant) -> N
         ) as client_class,
         patch.object(hass.config_entries, "async_schedule_reload") as schedule_reload,
     ):
-        client_class.return_value.async_validate_camera = AsyncMock(
+        client_class.return_value.async_validate_configured_camera = AsyncMock(
             return_value=_metadata()
         )
         result = await hass.config_entries.flow.async_init(

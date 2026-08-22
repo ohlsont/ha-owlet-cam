@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import io
 import stat
+import tempfile
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -62,6 +64,24 @@ def test_extracts_nested_apkm_split(tmp_path: Path) -> None:
 
     assert set(result.libraries) == REQUIRED_LIBRARIES
     assert result.sdk_key_found is True
+
+
+def test_spools_nested_apk_to_private_disk_file(tmp_path: Path) -> None:
+    outer = io.BytesIO()
+    with zipfile.ZipFile(outer, "w") as archive:
+        archive.writestr("splits/base.apk", _application_zip())
+    source = _write_archive(tmp_path / "owlet.apkm", outer.getvalue())
+    destination = tmp_path / "out"
+
+    with patch(
+        "custom_components.owlet_cam.runtime.apk.tempfile.TemporaryFile",
+        wraps=tempfile.TemporaryFile,
+    ) as temporary_file:
+        result = extract_owlet_application(source, destination)
+
+    assert result.sdk_key_found
+    temporary_file.assert_called_once_with(mode="w+b", dir=destination)
+    assert not any(path.name.startswith("tmp") for path in destination.iterdir())
 
 
 def test_rejects_archive_without_arm64_split(tmp_path: Path) -> None:

@@ -1,6 +1,7 @@
 """Owlet Cam integration lifecycle."""
 
 from datetime import timedelta
+from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -22,6 +23,7 @@ from .const import (
 )
 from .coordinator import OwletCamCoordinator
 from .data import OwletCamConfigEntry, OwletCamRuntimeData
+from .runtime.manager import OwletRuntimeManager
 
 
 async def async_setup_entry(
@@ -31,6 +33,7 @@ async def async_setup_entry(
     """Set up Owlet Cam from a config entry."""
     client = None
     cameras: dict[str, OwletCameraData] = {}
+    runtime_manager = None
     if entry.data.get(CONF_MODE) == MODE_EMBEDDED:
         dsn = entry.data[CONF_CAMERA_DSN]
         client = OwletCloudClient(
@@ -52,13 +55,19 @@ async def async_setup_entry(
             camera_id=dsn,
             name=entry.data[CONF_CAMERA_NAME],
         )
+        runtime_manager = OwletRuntimeManager(
+            hass,
+            root=Path(hass.config.path("custom_components", "owlet_cam", "userfiles")),
+            client=client,
+            camera_identifier=dsn,
+        )
     else:
         coordinator = OwletCamCoordinator(hass)
 
     entry.runtime_data = OwletCamRuntimeData(
         client=client,
         coordinator=coordinator,
-        runtime_manager=None,
+        runtime_manager=runtime_manager,
         cameras=cameras,
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -70,6 +79,9 @@ async def async_unload_entry(
     entry: OwletCamConfigEntry,
 ) -> bool:
     """Unload Owlet Cam and all forwarded platforms."""
+    runtime_manager = entry.runtime_data.runtime_manager
+    if runtime_manager is not None:
+        await runtime_manager.async_shutdown()
     registry = er.async_get(hass)
     entity_ids = [
         registry_entry.entity_id

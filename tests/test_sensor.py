@@ -73,7 +73,7 @@ async def test_embedded_entity_properties_use_only_cached_data(
     )
     with patch("custom_components.owlet_cam.OwletCloudClient") as client_class:
         validate = AsyncMock(return_value=metadata)
-        client_class.return_value.async_validate_camera = validate
+        client_class.return_value.async_validate_configured_camera = validate
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
         validate.reset_mock()

@@ -36,6 +36,7 @@ from scripts.probe_cloud import (
 EMAIL = "parent@example.invalid"
 PASSWORD = "fixture-account-password"  # noqa: S105 - sanitized fixture
 DSN = "OCD123456789"
+INTERNAL_DSN = "OCD987654321"
 ID_TOKEN = "fixture-firebase-token"  # noqa: S105 - sanitized fixture
 REFRESH_TOKEN = "fixture-refresh-token"  # noqa: S105 - sanitized fixture
 UID = "fixture-camera-uid"
@@ -125,6 +126,123 @@ async def test_successful_region_login_and_kms(
     assert kms_request[3]["Authorization"] == ID_TOKEN
     assert kms_request[3]["User-Agent"] == auth_request[3]["User-Agent"]
     assert kms_request[3]["Accept-Language"] == "en"
+
+
+async def test_configured_serial_discovers_single_internal_kms_dsn(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """A Cam 1 serial can resolve to a different private KMS identifier."""
+    client = _client(hass)
+    _mock_auth(aioclient_mock, client)
+    aioclient_mock.get(
+        cloud._KMS_URLS[client.region].format(dsn=DSN),
+        status=404,
+        json={"message": "Camera not found"},
+    )
+    project = cloud._FIRESTORE_PROJECTS[client.region]
+    account_url = cloud._FIRESTORE_DOCUMENT_URL.format(
+        project=project,
+        collection="accounts",
+        document_id="fixture-account-id",
+    )
+    service_url = cloud._FIRESTORE_DOCUMENT_URL.format(
+        project=project,
+        collection="services",
+        document_id="fixture-service-id",
+    )
+    device_url = cloud._FIRESTORE_DOCUMENT_URL.format(
+        project=project,
+        collection="devices",
+        document_id="fixture-device-id",
+    )
+    aioclient_mock.get(
+        account_url,
+        json={
+            "fields": {
+                "serviceKeys": {"mapValue": {"fields": {"fixture-service-id": {}}}}
+            }
+        },
+    )
+    aioclient_mock.get(
+        service_url,
+        json={"fields": {"deviceKey": {"stringValue": "fixture-device-id"}}},
+    )
+    aioclient_mock.get(
+        device_url,
+        json={"fields": {"dsn": {"stringValue": INTERNAL_DSN}}},
+    )
+    aioclient_mock.get(
+        cloud._KMS_URLS[client.region].format(dsn=INTERNAL_DSN),
+        json=KMS_RESPONSE,
+    )
+
+    metadata = await client.async_validate_configured_camera(DSN)
+    credentials = await client.async_get_camera_credentials(DSN)
+
+    assert metadata.camera_dsn == DSN
+    assert metadata.credentials_available
+    assert "fixture-camera-uid" not in repr(credentials)
+    assert "fixture-auth-key" not in repr(credentials)
+    assert "fixture-av-password" not in repr(credentials)
+
+
+async def test_configured_camera_does_not_guess_between_multiple_devices(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Ambiguous discovery preserves the original safe not-found error."""
+    client = _client(hass)
+    _mock_auth(aioclient_mock, client)
+    aioclient_mock.get(
+        cloud._KMS_URLS[client.region].format(dsn=DSN),
+        status=404,
+        json={"message": "Camera not found"},
+    )
+    project = cloud._FIRESTORE_PROJECTS[client.region]
+    aioclient_mock.get(
+        cloud._FIRESTORE_DOCUMENT_URL.format(
+            project=project,
+            collection="accounts",
+            document_id="fixture-account-id",
+        ),
+        json={
+            "fields": {
+                "serviceKeys": {
+                    "mapValue": {
+                        "fields": {
+                            "service-a": {},
+                            "service-b": {},
+                        }
+                    }
+                }
+            }
+        },
+    )
+    for suffix in ("a", "b"):
+        aioclient_mock.get(
+            cloud._FIRESTORE_DOCUMENT_URL.format(
+                project=project,
+                collection="services",
+                document_id=f"service-{suffix}",
+            ),
+            json={"fields": {"deviceKey": {"stringValue": f"device-{suffix}"}}},
+        )
+        aioclient_mock.get(
+            cloud._FIRESTORE_DOCUMENT_URL.format(
+                project=project,
+                collection="devices",
+                document_id=f"device-{suffix}",
+            ),
+            json={
+                "fields": {
+                    "dsn": {"stringValue": f"OCD00000000{1 if suffix == 'a' else 2}"}
+                }
+            },
+        )
+
+    with pytest.raises(OwletCameraNotFoundError):
+        await client.async_validate_configured_camera(DSN)
 
 
 @pytest.mark.parametrize(

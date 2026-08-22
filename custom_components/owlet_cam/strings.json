@@ -31,14 +31,14 @@
         "title": "Embedded experimental cloud validation",
         "description": "This validates Owlet authentication and camera KMS metadata. Native streaming is not started.",
         "data": {
-          "camera_dsn": "Camera DSN",
+          "camera_dsn": "Camera serial / identifier",
           "camera_name": "Camera name",
           "email": "Owlet email",
           "password": "Owlet password",
           "region": "Region"
         },
         "data_description": {
-          "camera_dsn": "Use the printed camera DSN. It begins with the letter O, not the digit 0.",
+          "camera_dsn": "Use the serial shown in the Owlet app or printed on the camera. The integration discovers any different internal KMS identifier without displaying it.",
           "password": "Stored in Home Assistant config-entry data and never written to runtime files."
         }
       },
@@ -55,7 +55,7 @@
         "title": "Reconfigure Owlet Cam",
         "description": "Revalidate the account and existing camera DSN. To add another camera, create another entry.",
         "data": {
-          "camera_dsn": "Camera DSN",
+          "camera_dsn": "Camera serial / identifier",
           "camera_name": "Camera name",
           "email": "Owlet email",
           "password": "Owlet password",
@@ -127,23 +127,55 @@
     }
   },
   "entity": {
+    "button": {
+      "run_frame_probe": {
+        "name": "Run frame probe"
+      },
+      "run_runtime_probe": {
+        "name": "Run runtime probe"
+      }
+    },
     "binary_sensor": {
       "camera_credentials_available": {
         "name": "Camera credentials available"
       },
       "cloud_reachable": {
         "name": "Cloud reachable"
+      },
+      "native_libraries_compatible": {
+        "name": "Native libraries compatible"
+      },
+      "video_frames_received": {
+        "name": "Video frames received"
       }
     },
     "sensor": {
       "authentication_expiry": {
         "name": "Authentication expiry"
       },
+      "detected_apk_version": {
+        "name": "Detected application version"
+      },
+      "detected_fps": {
+        "name": "Detected FPS"
+      },
+      "detected_resolution": {
+        "name": "Detected resolution"
+      },
+      "helper_version": {
+        "name": "Helper version"
+      },
       "integration_status": {
         "name": "Integration status",
         "state": {
           "ready": "Ready"
         }
+      },
+      "last_frame_probe": {
+        "name": "Last frame probe"
+      },
+      "runtime_status": {
+        "name": "Runtime status"
       }
     }
   }

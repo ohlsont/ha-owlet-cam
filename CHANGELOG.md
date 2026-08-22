@@ -8,10 +8,48 @@ All notable changes are documented here. Versions follow semantic versioning.
   dependency-free AArch64 ELF/symbol/dependency inspector.
 - Added a redacted application probe and a freestanding, isolated Bionic
   `dlopen` helper; no compiled artefacts or proprietary files are committed.
-- Verified a user-supplied, validly signed Owlet 3.36.0 ARM64 bundle and loaded
-  all five required native libraries under a pinned AOSP Bionic runtime.
-- Camera authentication, connection, frames, snapshots, and streaming remain
-  unperformed; this work is not a release or a Milestone 3 gate pass.
+- Verified user-supplied, validly signed Owlet 3.36.0 and 3.40.0 ARM64 bundles;
+  their five required native libraries are identical and load under a pinned
+  AOSP Bionic runtime.
+- Added redacted authorized Firestore camera discovery, revealing that Dream's
+  visible camera identifier differs from the internal KMS DSN for this account.
+- Added a clean-room, stdin-secret-only AArch64 connection/frame helper and a
+  local runner that removes its emulator files after each probe.
+- Received 100 real H.264 frames in each of three separate ARM64 emulator probes
+  with SPS/PPS/IDR present, parsed 1920×1080, and clean shutdown. This is local
+  feasibility evidence, not a Home Assistant/Yellow or release gate pass.
+- Confirmed by user observation that Dream's Android live view worked after the
+  helper probes, providing evidence of clean camera-session release.
+- Moved authorized Firestore serial-to-KMS discovery into the production cloud
+  client; the Home Assistant flow now accepts the app-visible camera serial
+  while keeping the different internal KMS identifier in memory only.
+- Added a supervised process-group runner, strict helper response schemas,
+  runtime checksum manifests, atomic safe archive installation, config-entry
+  unload termination, cached diagnostics, and disabled-by-default runtime and
+  frame-probe buttons.
+- Added a deterministic proprietary-free runtime packager. A newly compiled
+  clean-room helper build loaded all five user libraries and received 100 real
+  H.264 frames under the ARM64 emulator before packaging.
+- Verified the packaged helper's exact explicit-Bionic-linker launch shape in a
+  read-only ARM64 Linux container and use only a fixed, non-secret
+  `LD_LIBRARY_PATH`; camera secrets remain stdin-only.
+- A private Yellow installation loaded successfully and completed real EMEA
+  cloud authentication, authorized camera discovery, KMS validation, entity
+  setup, config-entry reload, and redacted diagnostics.
+- The first Yellow runtime probe exposed a memory defect: nested APKs were held
+  in `BytesIO`, and Supervisor recorded Core plus Matter exits with code 137.
+  Nested APKs now spool to mode-0600 disk files, and only previous-process
+  extraction directories are cleaned on retry. One corrected press caused no
+  new Core exit but overlapped a still-completing config-entry reload, which
+  replaced the runtime manager before a result was retained. The attempt is
+  inconclusive. A later reload-settled Yellow probe completed in about 19
+  seconds, loaded all five required user libraries, reported zero failures, and
+  left Core running without a new exit or Repair. Entry unload/re-enable and
+  restart recovered cleanly, so the Yellow native capability gate is passed.
+- Current automated validation: 125 tests passed at 86.49% branch-aware
+  coverage; Ruff and mypy passed.
+- Snapshot, RTSP/live streaming, Yellow frame reception, and physical outage
+  validation remain unperformed.
 
 ## [0.2.0] - Unreleased
 
@@ -33,22 +71,22 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ### Validation status
 
-- Local automated validation: 85 tests passed with 90.29% branch-aware coverage
+- Local automated validation: 92 tests passed with 90.29% branch-aware coverage
   on Home Assistant 2026.8.2; Ruff, mypy, secret and release checks pass.
 - A redacted real-account probe authenticated successfully against the
-  user-confirmed EMEA Firebase project and reached the APK-verified regional
-  KMS host. KMS returned HTTP 403 for the configured camera identifier, so no
-  camera credentials were returned and the gate remains failed. Public
-  GitHub/HACS installation and Yellow validation remain deferred/unperformed.
+  user-confirmed EMEA Firebase project. Direct authorized Firestore references
+  resolved the account's internal camera DSN, and regional KMS validation then
+  returned true UID/AuthKey/AV-password presence booleans without values.
+  Public GitHub/HACS installation and Yellow validation remain unperformed.
 - Confirmed the identifier comes from Dream device information and the same
   account can view the camera. Raw and Bearer token formats plus APK-observed
   generic request headers all produced the same redacted KMS 403 result.
 - Confirmed the account originally paired the user-reported Cam 1. EMEA Owlet
   SSO returned 200, but KMS still returned 403 after a Firebase token refresh;
   no account or camera secret was emitted.
-- Completed redacted device-mapping checks: Ayla authenticated but enumerated
-  zero devices; Dream account lookup succeeded without an embedded DSN, and
-  its account `/devices` resource returned 404.
+- Earlier legacy/Ayla mapping checks did not reveal the camera. The working
+  path follows Dream's authorized Firestore account → service → device
+  references; the printed identifier is not the internal KMS DSN.
 
 ## [0.1.0] - Unreleased
 

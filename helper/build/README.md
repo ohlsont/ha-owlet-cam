@@ -20,7 +20,14 @@ the user-supplied libraries with `dlopen`, emits JSON lines, closes every handle
 and exits. The local binary was an AArch64 PIE with the explicit interpreter
 `/runtime/bin/linker64`. Its output is recorded in `TEST_REPORT.md`.
 
-This manual spike must become a pinned, checksummed GitHub Actions build before
-any embedded runtime is distributed. A release asset may contain our helper,
-the minimal open-source runtime, and complete licence notices, but never the
-user's application, ThroughTek/Owlet libraries, SDK key, or camera credentials.
+`helper/src/frame_probe.c` is a separate clean-room feasibility helper. It uses
+the observed public/native ABI without proprietary headers, accepts all secret
+material only in a single stdin JSON object, scrubs its fixed buffers, and emits
+only fixed-schema connection/frame statistics. No compiled copy is committed.
+
+`scripts/build_helper_runtime.py` now creates a deterministic `tar.gz` with a
+per-file runtime manifest, the minimal open-source runtime, and complete AOSP
+and integration licence notices. Its output is a local test artefact until the
+same build is wired into the release workflow and the Yellow gate passes. No
+asset may contain the user's application, ThroughTek/Owlet libraries, SDK key,
+or camera credentials.

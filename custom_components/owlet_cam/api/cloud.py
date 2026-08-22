@@ -18,7 +18,7 @@ from .exceptions import (
     OwletRateLimitError,
     OwletUnsupportedRegionError,
 )
-from .models import OwletCloudMetadata
+from .models import OwletCameraCredentials, OwletCloudMetadata
 
 _FIREBASE_SIGN_IN_URL: Final = (
     "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"
@@ -28,6 +28,14 @@ _KMS_URLS: Final = {
     REGION_EUROPE: "https://camera-kms.eu.owletdata.com/kms/{dsn}",
     REGION_WORLD: "https://camera-kms.owletdata.com/kms/{dsn}",
 }
+_FIRESTORE_PROJECTS: Final = {
+    REGION_EUROPE: "owletcare-prod-eu",
+    REGION_WORLD: "owletcare-prod",
+}
+_FIRESTORE_DOCUMENT_URL: Final = (
+    "https://firestore.googleapis.com/v1/projects/{project}/"
+    "databases/(default)/documents/{collection}/{document_id}"
+)
 _ANDROID_PACKAGE: Final = "com.owletcare.sleep"
 _ANDROID_CERT: Final = "2A3BC26DB0B8B0792DBE28E6FFDC2598F9B12B74"
 _ANDROID_APP_VERSION: Final = "3.36.0"
@@ -121,33 +129,128 @@ class OwletCloudClient:
         """Authenticate and return only non-secret KMS presence metadata."""
         normalized_dsn = normalize_camera_dsn(dsn)
         token = await self._async_ensure_token()
+        payload = await self._async_get_kms_payload(normalized_dsn, token)
+        return self._metadata_from_payload(normalized_dsn, payload)
+
+    async def async_validate_configured_camera(
+        self, identifier: str
+    ) -> OwletCloudMetadata:
+        """Validate a serial or DSN while keeping any internal DSN private."""
+        normalized_identifier = normalize_camera_dsn(identifier)
+        token = await self._async_ensure_token()
+        kms_dsn = normalized_identifier
+        try:
+            payload = await self._async_get_kms_payload(kms_dsn, token)
+        except OwletCameraNotFoundError as direct_error:
+            discovered = await self._async_discover_camera_dsns(token)
+            if normalized_identifier in discovered:
+                kms_dsn = normalized_identifier
+            elif len(discovered) == 1:
+                # Owlet Cam 1 exposes a user-facing serial that can differ from
+                # the internal KMS DSN. Keep that internal value in memory only.
+                kms_dsn = discovered[0]
+            else:
+                raise direct_error
+            payload = await self._async_get_kms_payload(kms_dsn, token)
+
+        return self._metadata_from_payload(normalized_identifier, payload)
+
+    def _metadata_from_payload(
+        self, configured_identifier: str, payload: dict[str, Any]
+    ) -> OwletCloudMetadata:
+        """Cache private credentials and return presence-only metadata."""
+        credentials = self._credentials_from_payload(payload)
+        self._camera_credentials[configured_identifier] = credentials
+        if self._account_id is None or self._token_expiry is None:
+            raise OwletConnectionError("Authentication response was incomplete")
+        return OwletCloudMetadata(
+            account_id=self._account_id,
+            camera_dsn=configured_identifier,
+            camera_uid_available=bool(credentials.uid),
+            auth_key_available=bool(credentials.auth_key),
+            av_password_available=bool(credentials.av_password),
+            token_expiry=self._token_expiry,
+        )
+
+    async def async_get_camera_credentials(self, dsn: str) -> OwletCameraCredentials:
+        """Fetch fresh KMS credentials for one isolated-helper invocation."""
+        normalized_dsn = normalize_camera_dsn(dsn)
+        await self.async_validate_configured_camera(normalized_dsn)
+        credentials = self._camera_credentials[normalized_dsn]
+        return OwletCameraCredentials(
+            uid=credentials.uid,
+            auth_key=credentials.auth_key,
+            av_password=credentials.av_password,
+        )
+
+    async def _async_get_kms_payload(self, dsn: str, token: str) -> dict[str, Any]:
+        """Fetch one KMS record without exposing the requested identifier."""
         payload = await self._async_request_json(
             "GET",
-            _KMS_URLS[self._region].format(dsn=normalized_dsn),
+            _KMS_URLS[self._region].format(dsn=dsn),
             headers=self._kms_headers(token),
             operation="kms",
         )
+        return payload
 
+    @staticmethod
+    def _credentials_from_payload(payload: dict[str, Any]) -> _CameraCredentials:
+        """Extract private KMS values without retaining the response object."""
         uid = _get_nonempty_string(payload, "tutkid", "uid")
         auth_key = _get_nonempty_string(payload, "authKey", "authkey")
         av_password = _get_nonempty_string(payload, "password", "avPassword")
         if not uid and not auth_key and not av_password:
             raise OwletConnectionError("Camera metadata response was incomplete")
-
-        self._camera_credentials[normalized_dsn] = _CameraCredentials(
+        return _CameraCredentials(
             uid=uid or "",
             auth_key=auth_key or "",
             av_password=av_password or "",
         )
-        if self._account_id is None or self._token_expiry is None:
+
+    async def _async_discover_camera_dsns(self, token: str) -> tuple[str, ...]:
+        """Follow only document references authorized to the signed-in account."""
+        if self._account_id is None:
             raise OwletConnectionError("Authentication response was incomplete")
-        return OwletCloudMetadata(
-            account_id=self._account_id,
-            camera_dsn=normalized_dsn,
-            camera_uid_available=bool(uid),
-            auth_key_available=bool(auth_key),
-            av_password_available=bool(av_password),
-            token_expiry=self._token_expiry,
+        account = await self._async_get_firestore_document(
+            collection="accounts", document_id=self._account_id, token=token
+        )
+        service_keys = _firestore_map_keys(account.get("fields"), "serviceKeys")
+        device_keys: list[str] = []
+        for service_key in service_keys:
+            service = await self._async_get_firestore_document(
+                collection="services", document_id=service_key, token=token
+            )
+            device_key = _firestore_string(service.get("fields"), "deviceKey")
+            if device_key is not None:
+                device_keys.append(device_key)
+
+        discovered: set[str] = set()
+        for device_key in device_keys:
+            device = await self._async_get_firestore_document(
+                collection="devices", document_id=device_key, token=token
+            )
+            candidate = _firestore_string(device.get("fields"), "dsn")
+            if candidate is None:
+                continue
+            try:
+                discovered.add(normalize_camera_dsn(candidate))
+            except OwletInvalidDSNError:
+                continue
+        return tuple(sorted(discovered))
+
+    async def _async_get_firestore_document(
+        self, *, collection: str, document_id: str, token: str
+    ) -> dict[str, Any]:
+        """Read one already-authorized Firestore document."""
+        return await self._async_request_json(
+            "GET",
+            _FIRESTORE_DOCUMENT_URL.format(
+                project=_FIRESTORE_PROJECTS[self._region],
+                collection=collection,
+                document_id=document_id,
+            ),
+            headers={"Authorization": f"Bearer {token}"},
+            operation="discovery",
         )
 
     async def _async_ensure_token(self) -> str:
@@ -326,6 +429,17 @@ class OwletCloudClient:
                     reason=_kms_error_reason(payload, status),
                     http_status=status,
                 )
+        elif operation == "discovery":
+            if status == 401:
+                raise OwletAuthenticationError(
+                    "Owlet account session is invalid", reason="session_invalid"
+                )
+            if status in {403, 404}:
+                raise OwletCameraNotFoundError(
+                    "Camera discovery is unavailable to this Owlet account",
+                    reason="camera_discovery_unavailable",
+                    http_status=status,
+                )
         raise OwletConnectionError("Owlet service request failed")
 
 
@@ -343,6 +457,33 @@ def _parse_expiry(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return expiry if expiry > 0 else None
+
+
+def _firestore_string(fields: object, name: str) -> str | None:
+    """Extract one Firestore string without retaining its document."""
+    if not isinstance(fields, dict):
+        return None
+    value = fields.get(name)
+    if not isinstance(value, dict):
+        return None
+    string_value = value.get("stringValue")
+    return string_value if isinstance(string_value, str) and string_value else None
+
+
+def _firestore_map_keys(fields: object, name: str) -> tuple[str, ...]:
+    """Extract Firestore map keys without retaining their values."""
+    if not isinstance(fields, dict):
+        return ()
+    value = fields.get(name)
+    if not isinstance(value, dict):
+        return ()
+    map_value = value.get("mapValue")
+    if not isinstance(map_value, dict):
+        return ()
+    map_fields = map_value.get("fields")
+    if not isinstance(map_fields, dict):
+        return ()
+    return tuple(key for key in map_fields if isinstance(key, str) and key)
 
 
 def _firebase_error_code(payload: dict[str, Any]) -> str:

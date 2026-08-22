@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import os
 import re
 import stat
+import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -114,8 +114,8 @@ def extract_owlet_application(
     """Extract only required libraries and detect the user APK's SDK key.
 
     The destination may exist but must be empty. Nothing from the archive is
-    executed, and nested split APKs are processed in memory under the same global
-    file-count and uncompressed-size budget.
+    executed, and nested split APKs are spooled to mode-0600 temporary files
+    under the same global file-count and uncompressed-size budget.
     """
     limits = limits or ArchiveLimits()
     _validate_source(archive, limits)
@@ -198,15 +198,18 @@ def _process_zip(source: IO[bytes], state: _ExtractionState, *, depth: int) -> N
             if member.suffix.lower() == ".apk":
                 if info.file_size > state.budget.limits.maximum_nested_archive_size:
                     raise OwletArchiveError("Nested APK exceeds the size limit")
-                nested = io.BytesIO()
-                with archive.open(info, "r") as data:
-                    _copy_limited(
-                        data,
-                        nested,
-                        state.budget.limits.maximum_nested_archive_size,
-                    )
-                nested.seek(0)
-                _process_zip(nested, state, depth=depth + 1)
+                with tempfile.TemporaryFile(
+                    mode="w+b", dir=state.destination
+                ) as nested:
+                    os.fchmod(nested.fileno(), 0o600)
+                    with archive.open(info, "r") as data:
+                        _copy_limited(
+                            data,
+                            nested,
+                            state.budget.limits.maximum_nested_archive_size,
+                        )
+                    nested.seek(0)
+                    _process_zip(nested, state, depth=depth + 1)
                 continue
 
             if member.suffix.lower() in _SCAN_SUFFIXES:

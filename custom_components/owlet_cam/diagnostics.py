@@ -24,13 +24,18 @@ async def async_get_config_entry_diagnostics(
             "mode": entry.data.get("mode", "unknown"),
             "coordinator_last_update_success": runtime.coordinator.last_update_success,
             "camera_count": len(runtime.cameras),
-            "native_helper_running": runtime.runtime_manager is not None,
+            "native_helper_configured": runtime.runtime_manager is not None,
             "cloud_reachable": coordinator_data.get("cloud_reachable"),
             "camera_credentials_available": coordinator_data.get(
                 "credentials_available"
             ),
             "authentication_expiry": (
                 expiry.isoformat() if hasattr(expiry, "isoformat") else None
+            ),
+            "embedded_runtime": (
+                runtime.runtime_manager.diagnostics()
+                if runtime.runtime_manager is not None
+                else None
             ),
         },
     }

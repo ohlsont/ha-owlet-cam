@@ -66,3 +66,17 @@ and a valid OpenPGP signature from EFF key fingerprint
 `1073 E74E B38B D6D1 9476 CBF8 EA9D BF9F B761 A677`. The pinned AOSP ARM64
 runtime APEX had SHA-256
 `83bf0dce249728dae48149b80d28b48115c54adad95a352120d58a6ac669d1fc`.
+
+On 2026-08-22, the user installed the official Dream 3.40.0 (`64832`) Google
+Play build on a clean Android 15 ARM64 emulator. Narrow inspection of that
+user-supplied package established only protocol/ABI observations needed for an
+independent implementation: Firebase UID selects the Firestore account; direct
+account/service/device references lead to the internal KMS DSN; connection uses
+AuthKey authentication with a 20-second bound; AV authentication uses account
+`admin`, password mode, automatic security, resend enabled, and the documented
+DTLS cipher policy. The app also established the exact native input/output
+structure sizes and initialization parameters used by its wrapper. No
+decompiled expression, control flow, identifier, credential, SDK key, Java/Kotlin
+source, native library, or application file was copied into this repository.
+`helper/src/frame_probe.c` was independently written with fixed byte layouts and
+tests against the user-owned binary behavior.

@@ -9,7 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_CAMERA_DSN, CONF_CAMERA_NAME, CONF_MODE, MODE_EMBEDDED
 from .data import OwletCamConfigEntry
-from .entity import OwletCamCloudEntity
+from .entity import OwletCamCloudEntity, OwletCamRuntimeEntity
 
 _DESCRIPTIONS = (
     BinarySensorEntityDescription(
@@ -24,6 +24,19 @@ _DESCRIPTIONS = (
     ),
 )
 
+_RUNTIME_DESCRIPTIONS = (
+    BinarySensorEntityDescription(
+        key="native_libraries_compatible",
+        translation_key="native_libraries_compatible",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    BinarySensorEntityDescription(
+        key="video_frames_received",
+        translation_key="video_frames_received",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+)
+
 
 async def async_setup_entry(
     _hass: object,
@@ -33,17 +46,21 @@ async def async_setup_entry(
     """Set up embedded cloud diagnostic binary sensors."""
     if entry.data.get(CONF_MODE) != MODE_EMBEDDED:
         return
-    async_add_entities(
-        [
-            OwletCamCloudBinarySensor(
-                entry,
-                description=description,
-                camera_dsn=entry.data[CONF_CAMERA_DSN],
-                camera_name=entry.data[CONF_CAMERA_NAME],
-            )
-            for description in _DESCRIPTIONS
-        ]
-    )
+    entities: list[BinarySensorEntity] = [
+        OwletCamCloudBinarySensor(
+            entry,
+            description=description,
+            camera_dsn=entry.data[CONF_CAMERA_DSN],
+            camera_name=entry.data[CONF_CAMERA_NAME],
+        )
+        for description in _DESCRIPTIONS
+    ]
+    if entry.runtime_data.runtime_manager is not None:
+        entities.extend(
+            OwletCamRuntimeBinarySensor(entry, description=description)
+            for description in _RUNTIME_DESCRIPTIONS
+        )
+    async_add_entities(entities)
 
 
 class OwletCamCloudBinarySensor(OwletCamCloudEntity, BinarySensorEntity):
@@ -73,3 +90,37 @@ class OwletCamCloudBinarySensor(OwletCamCloudEntity, BinarySensorEntity):
         """Return cached status without performing I/O."""
         value = self.coordinator.data.get(self.entity_description.key)
         return value if isinstance(value, bool) else None
+
+
+class OwletCamRuntimeBinarySensor(OwletCamRuntimeEntity, BinarySensorEntity):
+    """Expose a cached native gate result without entity-property I/O."""
+
+    entity_description: BinarySensorEntityDescription
+
+    def __init__(
+        self,
+        entry: OwletCamConfigEntry,
+        *,
+        description: BinarySensorEntityDescription,
+    ) -> None:
+        self.entity_description = description
+        manager = entry.runtime_data.runtime_manager
+        if manager is None:
+            raise RuntimeError("Embedded runtime manager is unavailable")
+        super().__init__(
+            manager,
+            camera_identifier=entry.data[CONF_CAMERA_DSN],
+            camera_name=entry.data[CONF_CAMERA_NAME],
+            key=description.key,
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return only manager-cached compatibility or frame state."""
+        snapshot = self.runtime_manager.snapshot
+        if self.entity_description.key == "native_libraries_compatible":
+            return snapshot.libraries_compatible
+        probe = snapshot.last_frame_probe
+        if probe is None:
+            return None
+        return probe.frames >= 100 and probe.sps > 0 and probe.pps > 0 and probe.idr > 0

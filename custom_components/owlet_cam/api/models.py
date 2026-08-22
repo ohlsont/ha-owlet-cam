@@ -1,6 +1,6 @@
 """Typed API models."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -23,6 +23,19 @@ class OwletCloudMetadata:
             and self.auth_key_available
             and self.av_password_available
         )
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class OwletCameraCredentials:
+    """Secret camera material passed only to the isolated native helper.
+
+    This object must never be serialized, logged, included in diagnostics, or
+    retained by an entity. ``repr=False`` prevents accidental dataclass output.
+    """
+
+    uid: str = field(repr=False)
+    auth_key: str = field(repr=False)
+    av_password: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)

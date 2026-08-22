@@ -1,7 +1,7 @@
 # Owlet Cam helper
 
-This directory is source/build infrastructure for the future isolated native
-helper. Compiled helpers must be produced as versioned release assets and must
+This directory is source/build infrastructure for the isolated native helper.
+Compiled helpers must be produced as versioned release assets and must
 never include Owlet applications, proprietary libraries, SDK keys, or
 camera/account credentials.
 
@@ -13,13 +13,25 @@ The `probe/local-video` feasibility branch begins with two pure-Python gates in
 - dependency-free ELF64 inspection for AArch64, dynamic dependencies, exported
   symbols and writable-executable segments.
 
-The local feasibility branch now also contains a freestanding no-camera Bionic
-loader probe. With a user-supplied, validly signed Owlet 3.36.0 ARM64 bundle, it
-loaded and closed all five required native libraries in a network-disabled
-Linux/ARM64 container using a pinned AOSP Bionic runtime. This is not camera or
-media evidence; real KMS handoff, camera connection, and H.264 receipt remain
-unperformed.
+The local feasibility branch also contains freestanding Bionic library and frame
+probes. With user-supplied, validly signed Owlet 3.36.0 and 3.40.0 ARM64 bundles,
+the no-camera helper loaded and closed all five required native libraries in a
+network-disabled Linux/ARM64 container using a pinned AOSP Bionic runtime.
 
-Account and camera secrets will be accepted only through an interactive,
-non-echoing input path and sent to the isolated helper over stdin; they must not
-be committed, persisted, placed in environment variables, or logged.
+After authorized camera discovery and KMS lookup succeeded, the clean-room frame
+helper received 100 real H.264 frames in each of three isolated Android 15 ARM64
+emulator runs. Each contained SPS, PPS and IDR NALs, parsed as 1920×1080, and
+reported clean shutdown. The runner removed the fixed emulator temporary
+directory after every run. Docker/OrbStack IOTC attempts timed out, and neither
+Home Assistant Core nor Yellow has run the helper, so those gates remain open.
+
+The rebuilt library and frame helpers have also passed those emulator gates.
+`scripts/build_helper_runtime.py` packages them with only the pinned minimal
+AOSP Bionic files and licence notices, emits a per-file checksum manifest, and
+produces deterministic output. The resulting archive remains a local test
+artefact until Yellow validation and release hosting are complete.
+
+Home Assistant account credentials remain in config-entry data. Short-lived
+camera credentials and the user-extracted SDK key are sent to the isolated
+helper over stdin only; they must not be committed, persisted to runtime files,
+placed in environment variables or command arguments, or logged.
