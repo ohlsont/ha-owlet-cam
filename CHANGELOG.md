@@ -120,7 +120,10 @@ All notable changes are documented here. Versions follow semantic versioning.
   remain unperformed; the full Milestone 6 gate is therefore incomplete.
 - Corrected config-entry unload ordering so forwarded platforms unload before
   runtime shutdown, and cancel any startup-waiting recovery task on unload.
-- Current automated validation: 161 tests passed at 86.24% branch-aware
+- Corrected one-shot startup-listener cleanup after a Yellow log check caught a
+  duplicate remove attempt; the final cold restart recovered automatically with
+  no Owlet system-log entry and zero active Repairs.
+- Current automated validation: 161 tests passed at 85.81% branch-aware
   coverage; Ruff and mypy passed. Two independent ARM64 helper builds produced
   the same proprietary-free archive.
 
