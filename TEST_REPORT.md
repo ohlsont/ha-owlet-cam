@@ -125,10 +125,20 @@ or stream claim is made by this report.
   200), refreshed the Firebase token, and retried KMS. KMS again returned HTTP
   403. This rules out a stale initial token or an uninitialized normal SSO
   session; no SSO or Firebase token value was printed or retained.
+- A redacted device-mapping probe completed the normal EMEA Owlet SSO and Ayla
+  token exchange with HTTP 200 responses. Ayla device enumeration also returned
+  HTTP 200 but contained zero devices. The signed Dream APK's Retrofit
+  annotations independently identified the Accounts API contract. Authenticated
+  account lookup returned HTTP 200, but its response contained no DSN-named
+  field; the corresponding `/devices` resource returned HTTP 404. Only status
+  codes, counts, and false equality booleans were emitted. No account ID,
+  device value, response body, or token was printed or retained.
 - **Acceptance gate: failed at KMS.** Real EMEA authentication is now proven
   locally, but camera metadata lookup did not succeed. Native camera connection
   and frame work must not begin. The unresolved boundary is server-side device
-  mapping or another undocumented authorization dependency.
+  mapping or another undocumented authorization dependency. A fresh official
+  Dream installation with no saved camera state is the next useful external
+  comparison; reinstalling the user's working iPhone app is not required.
 - `.venv/bin/ruff format --check .`, `.venv/bin/ruff check .`, and
   `.venv/bin/mypy custom_components scripts`: passed.
 - `scripts/validate_release.py`, `scripts/check_secrets.py`, repository JSON,

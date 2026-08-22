@@ -31,6 +31,9 @@ EMEA SSO session plus Firebase token refresh also succeeded before KMS again
 returned 403. The remaining blocker is an undocumented KMS authorization or
 server-side device-mapping dependency, not a known input-format, stale-token,
 or shared-caregiver error.
+Authenticated Ayla enumeration returned zero devices, while Dream account
+lookup succeeded but exposed no DSN mapping and its legacy account `/devices`
+resource returned 404. No account or device response data was retained.
 The user has deferred publishing the GitHub/HACS repository until core
 functionality is further along, so Yellow validation is still unperformed.
 

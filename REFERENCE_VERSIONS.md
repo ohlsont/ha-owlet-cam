@@ -52,6 +52,13 @@ decompiled expression or control flow was copied. No user credential, camera
 credential, SDK key, or proprietary application file was copied into the
 repository.
 
+The same narrow annotation inspection identified the Dream Accounts API's
+read-only `GET v2/accounts/{accountId}` and
+`GET v2/accounts/{accountId}/devices` contracts. They were used only for a
+redacted account/device-mapping comparison that emitted status codes, counts,
+and equality booleans. No response model, expression, implementation flow, or
+account/device value was copied or retained.
+
 The local native feasibility probe used apkeep as an external acquisition tool,
 not as source code. Its ARM64 release binary had SHA-256
 `5410acebd1b69427adcf98ccfdda6fa4dd3201e0540e5e2c01037b68e0a84049`

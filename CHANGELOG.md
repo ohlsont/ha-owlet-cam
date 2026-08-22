@@ -46,6 +46,9 @@ All notable changes are documented here. Versions follow semantic versioning.
 - Confirmed the account originally paired the user-reported Cam 1. EMEA Owlet
   SSO returned 200, but KMS still returned 403 after a Firebase token refresh;
   no account or camera secret was emitted.
+- Completed redacted device-mapping checks: Ayla authenticated but enumerated
+  zero devices; Dream account lookup succeeded without an embedded DSN, and
+  its account `/devices` resource returned 404.
 
 ## [0.1.0] - Unreleased
 
