@@ -56,10 +56,15 @@ All notable changes are documented here. Versions follow semantic versioning.
   evidence that the official app reclaimed the camera after helper teardown.
 - Added strict `lan`/`p2p`/`relay` session-mode reporting to the clean-room
   helper. The rebuilt AArch64 binary and runtime archive passed local ELF,
-  safe-error, checksum and atomic-install validation; Yellow deployment is
-  pending.
-- Snapshot, RTSP/live streaming, Dream-open-during-probe coexistence,
-  session-mode observation, and physical outage validation remain unperformed.
+  safe-error, checksum and atomic-install validation, then were
+  checksum-verified and atomically deployed on Yellow.
+- A Dream-open Yellow probe received 100 valid H.264 frames at 640×360 in `lan`
+  mode; after Dream closed, a second probe immediately reacquired 100 frames at
+  1920×1080 in `lan` mode. Both had SPS/PPS/IDR and clean shutdown. Direct
+  process-list checks after the runtime probe and both frame probes found no
+  orphan helper, completing the Milestone 4 bounded frame-probe gate.
+- Snapshot, RTSP/live streaming, camera-entity, Dream uninterrupted-view, and
+  physical outage validation remain unperformed.
 
 ## [0.2.0] - Unreleased
 

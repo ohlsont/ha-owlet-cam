@@ -4,7 +4,7 @@ Owlet Cam is a clean-room Home Assistant custom integration intended to expose
 Owlet cameras as native camera and room-sensor entities. It is not affiliated
 with, endorsed by, or supported by Owlet or ThroughTek.
 
-## Current status: Yellow frame probe proven; camera entity not implemented
+## Current status: Yellow frame and Dream coexistence gate passed
 
 Version `0.2.0` implements clean-room, asynchronous Owlet cloud authentication
 and camera KMS validation. Embedded Experimental setup can validate a European
@@ -52,10 +52,10 @@ config-entry reload and its runtime manager was replaced before a result could
 be retained. A subsequent reload-settled probe completed in about 19 seconds on
 the Yellow: the isolated helper loaded all five required user-supplied ARM64
 libraries, reported zero failures, and left Core running with no Repairs or new
-process exit. Entry unload/re-enable and restart also recovered cleanly. The
-runtime button remains disabled. The native capability gate is passed; HACS
-release-asset distribution and a direct orphan-process listing are still
-unperformed.
+process exit. Entry unload/re-enable and restart also recovered cleanly. A later
+revalidation with direct process-list access again passed and left no helper
+process. The native capability gate is passed; HACS release-asset distribution
+remains unperformed.
 
 On the separate local feasibility branch, validly signed Owlet 3.36.0 and
 3.40.0 ARM64 bundles have passed safe extraction, ELF, required-symbol, and
@@ -67,7 +67,12 @@ parsed as 1920×1080, and shut down cleanly. This is strong local feasibility
 evidence. The same clean-room helper has now completed three bounded 100-frame
 probes inside Home Assistant Core on Yellow. Every Yellow probe contained real
 H.264 SPS/PPS/IDR units, parsed as 1920×1080, and reported clean shutdown. This
-is not snapshot, RTSP, camera-entity, or dashboard-stream evidence.
+is not snapshot, RTSP, camera-entity, or dashboard-stream evidence. The
+session-mode build was subsequently deployed and connected in `lan` mode while
+Dream was actively displaying live video. That coexistence probe received 100
+valid frames at 640×360; after Dream closed, a second probe immediately
+reacquired 100 valid frames at 1920×1080. Both shut down cleanly, and direct
+process-list checks found no orphan helper.
 
 A deterministic package script now creates a checksum-manifested ARM64 runtime
 containing only the two clean-room helpers, a minimal pinned AOSP Bionic runtime,
@@ -95,8 +100,9 @@ implementation, including `_get_reauth_entry`, `_get_reconfigure_entry`, and
 the unique-ID mismatch guard.
 
 The primary target is Home Assistant Yellow running Home Assistant OS on
-AArch64. Cloud setup has been exercised on that target, but neither HACS
-installation nor the corrected native runtime probe has passed yet.
+AArch64. Cloud/KMS, the corrected native runtime gate, repeated H.264 frame
+receipt, Dream-open helper behavior, session-mode reporting, and orphan-process
+checks have passed on that target. HACS installation remains unperformed.
 
 ## Install as a HACS custom repository
 
@@ -144,13 +150,13 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   minimal Bionic probe, Yellow library probe, Yellow frame probe, and Android
   emulator frame probe passed. Docker/OrbStack IOTC timed
   out, so that network environment is not claimed as compatible.
-- Three Yellow probes each received 100 real H.264 frames with SPS/PPS/IDR,
-  1920×1080 resolution, 13.599–14.341 estimated FPS, and clean shutdown. Dream
-  live video worked after these Yellow probes, confirming post-probe camera
-  recovery. Official-app-open-before-probe behavior and direct/relay
-  session-mode observation remain unverified. Session-mode reporting is now
-  implemented as a three-value, non-secret field and locally validated, but the
-  rebuilt helper has not yet been deployed to Yellow.
+- Five Yellow probes each received 100 real H.264 frames with SPS/PPS/IDR and
+  clean shutdown. Three initial probes were 1920×1080 at 13.599–14.341 FPS. A
+  later Dream-open coexistence probe reported `lan`, 640×360 and 13.7 FPS; after
+  Dream closed, the helper immediately reacquired `lan`, 1920×1080 and 13.814
+  FPS. Direct checks found no orphan helper. This passes the bounded frame-probe
+  gate but is not snapshot or continuous-stream evidence, and it does not claim
+  Dream itself remained uninterrupted during the helper probe.
 - The local brand art has not been submitted to Home Assistant Brands, so
   validation that requires the public Brands repository may remain pending.
 - The documentation and issue URLs assume future publication at
