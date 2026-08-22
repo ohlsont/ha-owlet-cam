@@ -533,7 +533,8 @@ class OwletRuntimeManager:
             if self._hass.state is not CoreState.running:
                 await started.wait()
         finally:
-            remove_listener()
+            if not started.is_set():
+                remove_listener()
 
     async def async_stop_stream(self) -> None:
         """Stop the one native producer while leaving snapshots usable."""

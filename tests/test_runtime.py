@@ -822,7 +822,7 @@ async def test_runtime_restore_requires_prior_explicit_validation(
 
 
 async def test_runtime_restore_waits_for_home_assistant_start(
-    hass: HomeAssistant, tmp_path: Path
+    hass: HomeAssistant, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Cold-start revalidation waits until constrained Core startup settles."""
     root = tmp_path / "userfiles"
@@ -848,6 +848,7 @@ async def test_runtime_restore_waits_for_home_assistant_start(
         await restore_task
 
     restore.assert_awaited_once_with()
+    assert "Unable to remove unknown job listener" not in caplog.text
 
 
 async def test_frame_probe_is_gated_until_libraries_pass(
