@@ -146,8 +146,9 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   out, so that network environment is not claimed as compatible.
 - Three Yellow probes each received 100 real H.264 frames with SPS/PPS/IDR,
   1920×1080 resolution, 13.599–14.341 estimated FPS, and clean shutdown. Dream
-  recovery after these Yellow probes, official-app-open-before-probe behavior,
-  and direct/relay session-mode observation remain unverified.
+  live video worked after these Yellow probes, confirming post-probe camera
+  recovery. Official-app-open-before-probe behavior and direct/relay
+  session-mode observation remain unverified.
 - The local brand art has not been submitted to Home Assistant Brands, so
   validation that requires the public Brands repository may remain pending.
 - The documentation and issue URLs assume future publication at

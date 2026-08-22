@@ -52,8 +52,10 @@ All notable changes are documented here. Versions follow semantic versioning.
   SPS, seven PPS, seven IDR units, parsed 1920×1080, 13.599–14.341 estimated
   FPS, 71–262 ms to first frame, and clean shutdown. Core remained running with
   no new exit, Repair, or Owlet error.
-- Snapshot, RTSP/live streaming, Dream coexistence on Yellow, session-mode
-  observation, and physical outage validation remain unperformed.
+- The user confirmed Dream live video worked after the Yellow probes, providing
+  evidence that the official app reclaimed the camera after helper teardown.
+- Snapshot, RTSP/live streaming, Dream-open-during-probe coexistence,
+  session-mode observation, and physical outage validation remain unperformed.
 
 ## [0.2.0] - Unreleased
 
