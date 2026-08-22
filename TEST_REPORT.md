@@ -9,7 +9,7 @@ or real-system evidence.
 | 1 — Cloud authentication and KMS | `165093f` | 0.2.0 | 2026.8.2 current; 2024.11.0 minimum | HAOS 18.2 | AArch64 Yellow | Owlet Cam 1, user-reported; not hardware-verified | Not established | **Passed locally:** current full suite 125 tests at 86.49% branch-aware coverage; Ruff and mypy passed | **Partial:** manual install, setup, reload, entities, cloud/KMS, and redacted diagnostics passed | **Passed on Yellow:** EMEA authentication, authorized camera discovery, and KMS credential-presence validation | **Cloud/KMS Yellow core path passed; full Milestone 1 gate incomplete** | Loaded config entry; cloud and credential booleans on; diagnostics redacted email, password and camera identifier | HACS installation and wrong-password reauthentication correction | The app-visible serial differs from the internal KMS DSN; the production client resolves this relationship while keeping the internal value in memory only |
 | 2 — External bridge | — | — | — | — | — | — | — | Unperformed | Unperformed | Unperformed | Not started | — | All | Blocked by Milestone 0 gate |
 | 3 — Embedded ARM64 runtime probe | `165093f` | 0.2.0 base; helper 0.4.0-dev; no embedded release | Core 2026.8.2 | HAOS 18.2 | Yellow AArch64; ARM64 macOS/Docker/emulator local targets | Owlet Cam 1, user-reported | Not established | **Passed locally:** full suite 125 passed at 86.49% coverage; Ruff and mypy passed | **Passed native capability gate after correction:** runtime `ready`, all five required libraries loaded, unload/re-enable and restart recovered cleanly | No-camera library probe passed on Yellow; no camera connection attempted | **Yellow native runtime gate passed; release-distribution checks remain** | Helper 0.4.0-dev, compatibility `true`, no safe error, Core `RUNNING`, zero Repairs, no new code-137 exit, clean entry unload/re-enable/restart | HACS release asset download, direct `ps` orphan capture, separate `probe_runtime` command, detected APK version reporting, GitHub release build | Initial in-memory extraction caused code 137; disk-spooling correction passed. Restart was unusually slow and the user performed an additional manual restart; final setup was clean |
-| 4 — Embedded connection and frame probe | `165093f` | Development-only; no embedded release | Not applicable to local spike | Not applicable to local spike | Android 15 ARM64 emulator on ARM64 macOS | Owlet Cam 1, user-reported | Not established | Current full suite 125 passed at 86.49% coverage; Ruff and mypy passed | Unperformed | **Passed locally:** required repeated 100-frame H.264 probes, newly rebuilt-helper confirmation, and Dream recovery | **Local real-frame and session-release sub-gates passed; Yellow gate unperformed** | Exact redacted statistics are recorded below; every run contained SPS, PPS and IDR NALs, parsed 1920×1080, and reported clean shutdown; user confirmed working Dream video after the probes | Yellow execution, session-mode observation, enabled Home Assistant controls, and official-app-open-before-probe behavior | Docker/OrbStack IOTC timed out with `-13`; the same helper connected under the emulator's native Bionic/network environment, so Docker network compatibility remains unresolved |
+| 4 — Embedded connection and frame probe | `165093f` plus 2026-08-22 live evidence | Development-only; no embedded release | Core 2026.8.2 | HAOS 18.2 | Yellow AArch64; Android 15 ARM64 emulator on ARM64 macOS | Owlet Cam 1, user-reported | Not established | Current full suite 125 passed at 86.49% coverage; Ruff and mypy passed | **Passed frame-receipt sub-gate:** three separate 100-frame probes with SPS/PPS/IDR, 1920×1080 and clean shutdown | **Passed on Yellow:** real H.264 received in three bounded probes, including rapid successive sessions | **Yellow H.264 receipt passed; full coexistence gate remains open** | Yellow results: 450,104/450,118/451,325 bytes; 7/7/7 SPS/PPS/IDR each; 14.196/14.341/13.599 FPS; 81/71/262 ms first frame; clean shutdown each; no new Core exit, Repair or Owlet error | User confirmation that Dream reconnects after Yellow probes; official-app-open-before-probe behavior; direct/relay session-mode observation; direct process-list/orphan capture | Docker/OrbStack IOTC timed out with `-13`; helper output does not yet expose session mode, so direct versus relay is unknown |
 | 5–8 — Snapshot through stable release | — | — | — | — | — | — | — | Unperformed | Unperformed | Unperformed | Not started | — | All | Blocked until the complete Milestone 4 acceptance gate passes |
 
 ## Milestone 0 Yellow validation fields
@@ -26,9 +26,10 @@ or real-system evidence.
 | Reload result | Config-entry reload, re-enable, and restart restored `loaded` without duplicate entities observed |
 | Log result | Only Home Assistant's standard unverified-custom-integration warning; no Owlet exception/warning |
 
-No HACS acceptance, Yellow installation, physical outage, Home Assistant camera,
-snapshot, RTSP, or live-dashboard stream claim is made by this report. The only
-media claim is the isolated local frame-probe evidence recorded below.
+No HACS acceptance, physical outage, Home Assistant camera, snapshot, RTSP, or
+live-dashboard stream claim is made by this report. The media claim is limited
+to the bounded real H.264 frame-probe evidence recorded below; it is not a
+camera-entity or continuous-stream claim.
 
 ## Yellow live validation — 2026-08-22
 
@@ -94,6 +95,23 @@ media claim is the isolated local frame-probe evidence recorded below.
   Assistant's standard warning for an unverified custom integration. No direct
   process-list capture was available through MCP, so that check remains marked
   unperformed rather than inferred.
+- After a fresh reload-settled library probe, exactly three bounded real-camera
+  frame probes ran on Yellow. Probe 1 received 100 frames and 450,104 bytes,
+  with 7 SPS, 7 PPS, 7 IDR, 1920×1080, estimated 14.196 FPS, 81 ms to first
+  frame, and clean shutdown. Probe 2 received 100 frames and 450,118 bytes,
+  with 7/7/7 SPS/PPS/IDR, 1920×1080, 14.341 FPS, 71 ms to first frame, and
+  clean shutdown. Probe 3 immediately followed probe 2 and received 100 frames
+  and 451,325 bytes, with 7/7/7 SPS/PPS/IDR, 1920×1080, 13.599 FPS, 262 ms to
+  first frame, and clean shutdown. The rapid second and third sessions did not
+  collide. Home Assistant remained `RUNNING`, Repairs stayed empty, Supervisor
+  showed no exit newer than the original extraction failure, and Owlet emitted
+  no integration error. Both probe buttons were disabled afterward without
+  discarding the cached final result.
+- The helper result schema does not yet report direct/relay session mode. MCP
+  also cannot provide a direct process-list capture. Official-app-open-before-
+  probe behavior and user confirmation of Dream recovery after these Yellow
+  probes are therefore still required before the complete Milestone 4 gate can
+  be marked passed.
 
 ## Yellow-gate preparation — 2026-08-22
 
@@ -143,8 +161,9 @@ media claim is the isolated local frame-probe evidence recorded below.
   Its member list contains the integration and proprietary-free runtime only;
   the user-supplied application remains a separate ignored local file.
 - Current local validation: Ruff passed, mypy passed for 35 source files, and
-  `123 passed` at 86.47% branch-aware coverage. The Yellow runtime and frame
-  probes remain unperformed.
+  `125 passed` at 86.49% branch-aware coverage. The Yellow library gate and
+  three bounded Yellow frame probes passed; continuous streaming remains
+  unperformed.
 
 ## Local video feasibility spike — 2026-08-21
 
@@ -237,9 +256,10 @@ media claim is the isolated local frame-probe evidence recorded below.
   video worked. This is user-observed evidence that the official app regained
   the camera session after helper teardown; it is not an official-app-open-
   during-probe concurrency test.
-- FFprobe, subprocess supervision inside Home Assistant Core, Yellow lifecycle
-  validation, physical outage tests, and official-app-open-during-probe behavior
-  remain unperformed. The Milestone 4 Yellow acceptance gate is not passed.
+- FFprobe, physical outage tests, direct/relay observation, direct process-list
+  inspection, and official-app-open-during-probe behavior remain unperformed.
+  The Milestone 4 Yellow H.264 receipt sub-gate passed, but the complete
+  coexistence gate is not yet passed.
 
 ## Milestone 1 local automated evidence — 2026-08-21
 

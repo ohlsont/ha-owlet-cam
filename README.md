@@ -4,7 +4,7 @@ Owlet Cam is a clean-room Home Assistant custom integration intended to expose
 Owlet cameras as native camera and room-sensor entities. It is not affiliated
 with, endorsed by, or supported by Owlet or ThroughTek.
 
-## Current status: Yellow runtime gate in progress
+## Current status: Yellow frame probe proven; camera entity not implemented
 
 Version `0.2.0` implements clean-room, asynchronous Owlet cloud authentication
 and camera KMS validation. Embedded Experimental setup can validate a European
@@ -26,8 +26,7 @@ Core cloud entities include:
 
 The credential-availability entity is boolean only. Firebase tokens, camera UID,
 AuthKey, AV password, and account identifiers are not exposed in entity state,
-attributes, diagnostics, logs, or frontend errors. No Home Assistant/Yellow
-camera media claim is made yet.
+attributes, diagnostics, logs, or frontend errors.
 
 External bridge mode is visible as the planned production fallback but is
 explicitly unavailable until Milestone 2. A redacted real-account probe has
@@ -65,8 +64,10 @@ remain ignored under `userfiles/` and are not part of the repository. A
 clean-room isolated helper completed repeated 100-frame probes on an Android 15
 ARM64 emulator: each contained real H.264 SPS/PPS/IDR NAL units,
 parsed as 1920×1080, and shut down cleanly. This is strong local feasibility
-evidence, but it is not Home Assistant Yellow, snapshot, RTSP, or dashboard
-stream evidence.
+evidence. The same clean-room helper has now completed three bounded 100-frame
+probes inside Home Assistant Core on Yellow. Every Yellow probe contained real
+H.264 SPS/PPS/IDR units, parsed as 1920×1080, and reported clean shutdown. This
+is not snapshot, RTSP, camera-entity, or dashboard-stream evidence.
 
 A deterministic package script now creates a checksum-manifested ARM64 runtime
 containing only the two clean-room helpers, a minimal pinned AOSP Bionic runtime,
@@ -130,7 +131,8 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 ## Known limitations
 
 - No camera entity, bridge connection, snapshot, RTSP source, or Home Assistant
-  stream. Native connection and raw frames exist only in the local probe.
+  stream. Native connection and bounded raw-frame probes work on Yellow, but no
+  continuous media source exists yet.
 - Cloud/KMS behavior has comprehensive sanitized fixture coverage and succeeded
   inside Home Assistant Core on Yellow. Wrong-password reauthentication and the
   complete Milestone 1 acceptance sequence remain unperformed.
@@ -139,9 +141,13 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   exit but was invalidated by a still-completing config-entry reload. A later
   reload-settled probe passed all five library loads on Yellow.
 - The native libraries require Bionic and cannot be loaded by glibc. The local
-  minimal Bionic probe, Yellow library probe, and Android emulator frame probe
-  passed. Docker/OrbStack IOTC timed
+  minimal Bionic probe, Yellow library probe, Yellow frame probe, and Android
+  emulator frame probe passed. Docker/OrbStack IOTC timed
   out, so that network environment is not claimed as compatible.
+- Three Yellow probes each received 100 real H.264 frames with SPS/PPS/IDR,
+  1920×1080 resolution, 13.599–14.341 estimated FPS, and clean shutdown. Dream
+  recovery after these Yellow probes, official-app-open-before-probe behavior,
+  and direct/relay session-mode observation remain unverified.
 - The local brand art has not been submitted to Home Assistant Brands, so
   validation that requires the public Brands repository may remain pending.
 - The documentation and issue URLs assume future publication at

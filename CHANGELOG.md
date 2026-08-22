@@ -48,8 +48,12 @@ All notable changes are documented here. Versions follow semantic versioning.
   restart recovered cleanly, so the Yellow native capability gate is passed.
 - Current automated validation: 125 tests passed at 86.49% branch-aware
   coverage; Ruff and mypy passed.
-- Snapshot, RTSP/live streaming, Yellow frame reception, and physical outage
-  validation remain unperformed.
+- Three bounded Yellow probes each received 100 real H.264 frames with seven
+  SPS, seven PPS, seven IDR units, parsed 1920×1080, 13.599–14.341 estimated
+  FPS, 71–262 ms to first frame, and clean shutdown. Core remained running with
+  no new exit, Repair, or Owlet error.
+- Snapshot, RTSP/live streaming, Dream coexistence on Yellow, session-mode
+  observation, and physical outage validation remain unperformed.
 
 ## [0.2.0] - Unreleased
 
