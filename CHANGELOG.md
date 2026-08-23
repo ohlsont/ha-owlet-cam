@@ -148,6 +148,10 @@ All notable changes are documented here. Versions follow semantic versioning.
   matching system-log entries or Repairs.
 - Current automated validation: 189 tests passed at 85.86% branch-aware
   coverage; Ruff, mypy, secret scan and release validation passed.
+- Recorded a shortened Yellow continuous-view test: 7 minutes 44.65 seconds,
+  6,878 additional aggregate frames, zero reconnects, normal idle teardown,
+  zero matching Owlet system-log entries and zero active Repairs. The formal
+  two-hour and overnight soaks remain explicitly unperformed.
 
 ## [0.2.0] - Unreleased
 

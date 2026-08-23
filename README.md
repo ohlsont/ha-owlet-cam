@@ -132,9 +132,13 @@ found and corrected one idle-to-new-session timestamp discontinuity by clearing
 the old GOP and timestamp origin before a new native producer. After a Core
 restart, two separate real live sessions with a complete idle disconnect between
 them reached 4,201 aggregate frames, zero reconnects, zero consumers at final
-idle, zero Owlet/stream system-log entries and zero Repairs. The full gate is not
-passed because extended soaks, companion-app, outage and physical tests remain
-unperformed.
+idle, zero Owlet/stream system-log entries and zero Repairs. A later shortened
+continuous-view test ran for 7 minutes 44.65 seconds, advanced the aggregate
+counter by 6,878 frames, and returned normally to idle with zero consumers,
+zero reconnects, no matching Owlet system-log entry and no active Repair. This
+is practical bounded evidence, not a two-hour soak. The full gate is not passed
+because the formal two-hour and overnight soaks, companion-app, outage and
+physical tests remain unperformed.
 
 ## Planned runtime modes
 
@@ -194,8 +198,9 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 - The embedded camera's snapshot path and bounded continuous Home Assistant
   stream path have displayed real media on Yellow. The loopback source is
   timestamped MPEG-TS carrying copied H.264, not RTSP. The full live-stream gate
-  is incomplete because long-duration, companion-app, outage and physical tests
-  remain unperformed. Active-viewer reload, settled reload and Core-restart
+  is incomplete because the formal two-hour/overnight, companion-app, outage
+  and physical tests remain unperformed. Active-viewer reload, settled reload
+  and Core-restart
   recovery are automatic after the first explicit native validation.
 - Cloud/KMS behavior has comprehensive sanitized fixture coverage and succeeded
   inside Home Assistant Core on Yellow. Wrong-password reauthentication and the
