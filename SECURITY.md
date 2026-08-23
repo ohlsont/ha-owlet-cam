@@ -9,8 +9,11 @@ This independent project is not affiliated with Owlet or ThroughTek.
   supervised child process with loopback-only control and media endpoints.
 - The project will not ship Owlet applications, ThroughTek libraries, Owlet SDK
   keys, camera credentials, account credentials, or authentication tokens.
-- Proprietary files will be user-supplied and, when implemented, stored beneath
-  `custom_components/owlet_cam/userfiles/` with restrictive permissions.
+- Proprietary files are user-supplied and stored beneath
+  `custom_components/owlet_cam/userfiles/` with restrictive permissions. The
+  authenticated admin panel streams uploads to generated mode-0600 filenames;
+  it never uses the submitted filename as a path. Extracted libraries are mode
+  0500 and the SDK key is retained mode 0600 for archive-free restart recovery.
 - Account credentials belong in Home Assistant config-entry storage. Firebase
   and KMS tokens should remain in memory. Secrets will not be passed as command
   arguments or environment variables to helper processes.
@@ -27,13 +30,20 @@ of the supported design.
 
 ## Deleting stored material
 
-Milestone 1 stores account credentials only in Home Assistant config-entry
-storage and keeps Firebase and KMS material in process memory. It writes no
-proprietary material to `userfiles`. Before the authenticated delete UI
-exists, a user may stop/unload the integration and remove the contents of
-`custom_components/owlet_cam/userfiles/` using an existing Home Assistant file
-management method. Do not delete the integration directory while Home Assistant
-is running.
+Open the administrator-only **Owlet Cam Runtime** panel and choose **Delete
+proprietary files**. After explicit confirmation, the integration stops its
+native producer and deletes uploaded application archives, extracted Owlet/
+ThroughTek libraries, the stored SDK key, temporary extraction material and the
+native-validation marker. The checksum-verified open-source helper runtime and
+bounded logs remain. Removing the config entry separately deletes Home
+Assistant's stored account configuration according to Home Assistant's normal
+config-entry behavior.
+
+By default the uploaded application archive is deleted immediately after a
+successful extraction/library probe. The embedded option **Retain uploaded
+application after extraction** can keep it. Firebase, KMS UID/AuthKey/AV
+password material and tokens remain memory-only and are never written to
+`userfiles`.
 
 ## Reporting a vulnerability
 

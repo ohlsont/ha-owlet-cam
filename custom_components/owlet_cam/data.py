@@ -1,5 +1,6 @@
 """Typed runtime data for Owlet Cam config entries."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from homeassistant.config_entries import ConfigEntry
@@ -19,6 +20,7 @@ class OwletCamRuntimeData:
     coordinator: OwletCamCoordinator
     runtime_manager: OwletRuntimeManager | None
     cameras: dict[str, OwletCameraData] = field(default_factory=dict)
+    remove_runtime_issue_listener: Callable[[], None] | None = None
 
 
 type OwletCamConfigEntry = ConfigEntry[OwletCamRuntimeData]

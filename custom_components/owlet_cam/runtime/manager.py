@@ -13,7 +13,7 @@ import shutil
 import stat
 import tempfile
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterable, Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -34,6 +34,7 @@ from ..api.exceptions import (
 from .apk import (
     REQUIRED_LIBRARIES,
     SUPPORTED_ARCHIVE_SUFFIXES,
+    ExtractedLibrary,
     ExtractedOwletApplication,
     OwletArchiveError,
     extract_owlet_application,
@@ -58,6 +59,7 @@ from .protocol import (
     parse_snapshot_capture_output,
 )
 from .stream import H264LoopbackServer
+from .upload import StoredUpload, async_store_upload
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ _STREAM_PROBE_SECONDS: Final = 8.0
 _STREAM_PROBE_TIMEOUT: Final = 20.0
 _STREAM_PROBE_TERMINATE_TIMEOUT: Final = 2.0
 _MAX_RECONNECT_BACKOFF: Final = 300.0
+_STREAM_REPAIR_THRESHOLD: Final = 5
 _PROCESS_SESSION: Final = secrets.token_hex(8)
 _REQUIRED_RUNTIME_FILES: Final = frozenset(
     {
@@ -159,6 +162,8 @@ class PreparedRuntime:
     library_directory: Path
     libraries: tuple[NativeLibraryReport, ...]
     source_sha256: str
+    package_name: str | None = None
+    app_version: str | None = None
     stream_helper_available: bool = False
 
 
@@ -192,6 +197,10 @@ class RuntimeSnapshot:
     stream_last_interruption_code: str | None = None
     stream_last_recovery_at: datetime | None = None
     stream_last_stopped_at: datetime | None = None
+    application_status: str = "not_uploaded"
+    last_application_upload_at: datetime | None = None
+    last_application_upload_size: int | None = None
+    proprietary_files_present: bool = False
 
 
 class OwletRuntimeManager:
@@ -209,6 +218,7 @@ class OwletRuntimeManager:
         idle_disconnect_timeout: float = 60.0,
         no_frame_timeout: float = 15.0,
         reconnect_backoff: float = 30.0,
+        retain_application: bool = False,
     ) -> None:
         self._hass = hass
         self._root = root
@@ -226,6 +236,7 @@ class OwletRuntimeManager:
         self._idle_disconnect_timeout = max(0.0, idle_disconnect_timeout)
         self._no_frame_timeout = max(1.0, no_frame_timeout)
         self._reconnect_backoff = max(0.0, reconnect_backoff)
+        self._retain_application = retain_application
         self._stream_requested = False
         self._stream_task: asyncio.Task[None] | None = None
         self._idle_disconnect_task: asyncio.Task[None] | None = None
@@ -280,6 +291,84 @@ class OwletRuntimeManager:
 
         return remove
 
+    async def async_refresh_proprietary_state(self) -> None:
+        """Cache whether user-supplied material exists without entity-property I/O."""
+        present = await self._hass.async_add_executor_job(
+            _proprietary_files_present, self._root
+        )
+        self.snapshot.proprietary_files_present = present
+        if present:
+            if self.snapshot.application_status == "not_uploaded":
+                self.snapshot.application_status = "stored"
+        elif self.snapshot.status == "not_prepared":
+            self.snapshot.last_error_code = "missing_apk"
+        self._notify_listeners()
+
+    async def async_store_application_upload(
+        self,
+        content: AsyncIterable[bytes],
+        *,
+        suffix: str,
+        content_length: int | None,
+    ) -> StoredUpload:
+        """Store one authenticated upload without buffering it in memory."""
+        async with self._lock:
+            self._raise_if_stopped()
+            stored = await async_store_upload(
+                self._hass,
+                self._root / "uploads",
+                content,
+                suffix=suffix,
+                content_length=content_length,
+            )
+            self.snapshot.application_status = "uploaded"
+            self.snapshot.last_application_upload_at = datetime.now(UTC)
+            self.snapshot.last_application_upload_size = stored.size
+            self.snapshot.proprietary_files_present = True
+            self.snapshot.last_error_code = None
+            self._notify_listeners()
+            return stored
+
+    async def async_delete_proprietary_files(self) -> None:
+        """Stop native work and delete every user-supplied proprietary file."""
+        await self.async_stop_stream()
+        async with self._lock:
+            self._raise_if_stopped()
+            self._replace_sdk_key(None)
+            self._prepared = None
+            await self._hass.async_add_executor_job(
+                _delete_proprietary_files, self._root
+            )
+            self.snapshot.application_status = "deleted"
+            self.snapshot.proprietary_files_present = False
+            self.snapshot.libraries_compatible = None
+            self.snapshot.helper_version = None
+            self.snapshot.detected_apk_version = None
+            self.snapshot.last_error_code = "missing_apk"
+            self._set_status("not_prepared")
+
+    async def async_run_authentication_test(self) -> None:
+        """Refresh camera credentials and retain only a safe success state."""
+        try:
+            credentials = await self._client.async_get_camera_credentials(
+                self._camera_identifier
+            )
+            del credentials
+            self.snapshot.last_error_code = None
+            self._notify_listeners()
+        except OwletCamError as err:
+            code = _cloud_error_code(err)
+            self.snapshot.last_error_code = code
+            self._notify_listeners()
+            raise OwletRuntimeError(code, "Owlet authentication test failed") from err
+
+    async def async_restart_stream(self) -> None:
+        """Restart the producer when a local consumer is still connected."""
+        had_consumers = self._stream_server.client_count > 0
+        await self.async_stop_stream()
+        if had_consumers or self._keep_warm:
+            await self._async_stream_client_connected()
+
     async def async_prepare_and_probe_libraries(self) -> LibraryProbeResult:
         """Extract, inspect, verify, then dlopen without contacting a camera."""
         async with self._lock:
@@ -311,13 +400,20 @@ class OwletRuntimeManager:
                 self._raise_if_stopped()
                 self._prepared = prepared
                 self.snapshot.helper_version = prepared.manifest.version
+                self.snapshot.detected_apk_version = prepared.app_version
                 self.snapshot.libraries_compatible = probe.compatible
+                self.snapshot.proprietary_files_present = True
                 self.snapshot.last_error_code = None
                 if probe.compatible:
                     await self._hass.async_add_executor_job(
                         _write_validation_marker,
                         self._root / "state" / _VALIDATION_MARKER,
                     )
+                    if not self._retain_application:
+                        await self._hass.async_add_executor_job(
+                            _delete_uploaded_archives, self._root / "uploads"
+                        )
+                        self.snapshot.application_status = "extracted_upload_deleted"
                 self._set_status("ready")
                 return probe
             except OwletRuntimeError as err:
@@ -326,9 +422,9 @@ class OwletRuntimeManager:
                 raise
             except OwletArchiveError as err:
                 self._raise_if_stopped()
-                self._record_error("invalid_apk", libraries_failed=True)
+                self._record_error(err.code, libraries_failed=True)
                 raise OwletRuntimeError(
-                    "invalid_apk", "The user-supplied application is invalid"
+                    err.code, "The user-supplied application is invalid"
                 ) from err
             except ElfInspectionError as err:
                 self._raise_if_stopped()
@@ -774,6 +870,13 @@ class OwletRuntimeManager:
                 break
             self.snapshot.stream_reconnect_count += 1
             attempt += 1
+            if attempt >= _STREAM_REPAIR_THRESHOLD:
+                self.snapshot.last_error_code = "stream_recovery_failed"
+                _LOGGER.error(
+                    "Owlet Cam stream recovery repeatedly failed; review redacted "
+                    "diagnostics"
+                )
+                self._notify_listeners()
             delay = min(
                 self._reconnect_backoff * (2 ** min(attempt - 1, 8)),
                 _MAX_RECONNECT_BACKOFF,
@@ -811,7 +914,11 @@ class OwletRuntimeManager:
         if not self._stream_requested or self._shutdown:
             return
         now = datetime.now(UTC)
-        self.snapshot.last_error_code = code
+        self.snapshot.last_error_code = (
+            "stream_recovery_failed"
+            if self.snapshot.stream_reconnect_count >= _STREAM_REPAIR_THRESHOLD
+            else code
+        )
         self.snapshot.stream_last_interruption_at = now
         self.snapshot.stream_last_interruption_code = code
         _LOGGER.warning(
@@ -874,8 +981,22 @@ class OwletRuntimeManager:
             "status": self.snapshot.status,
             "helper_version": self.snapshot.helper_version,
             "detected_apk_version": self.snapshot.detected_apk_version,
+            "detected_apk_package": (
+                self._prepared.package_name if self._prepared is not None else None
+            ),
+            "detected_abi": ("arm64-v8a" if self._prepared is not None else None),
+            "sdk_key_found": self._prepared is not None and self._sdk_key is not None,
             "native_libraries_compatible": self.snapshot.libraries_compatible,
             "last_safe_error_code": self.snapshot.last_error_code,
+            "application": {
+                "status": self.snapshot.application_status,
+                "last_upload_at": _optional_isoformat(
+                    self.snapshot.last_application_upload_at
+                ),
+                "last_upload_size": self.snapshot.last_application_upload_size,
+                "proprietary_files_present": self.snapshot.proprietary_files_present,
+                "retain_uploaded_archive": self._retain_application,
+            },
             "last_frame_probe_at": (
                 self.snapshot.last_frame_probe_at.isoformat()
                 if self.snapshot.last_frame_probe_at is not None
@@ -932,6 +1053,11 @@ class OwletRuntimeManager:
                 "binding": "127.0.0.1" if self._stream_server.url else None,
             },
             "helper_process": process_diagnostics,
+            "libraries": (
+                [asdict(report) for report in self._prepared.libraries]
+                if self._prepared is not None
+                else []
+            ),
         }
 
     def _prepare_sync(self) -> tuple[PreparedRuntime, bytearray]:
@@ -940,9 +1066,35 @@ class OwletRuntimeManager:
                 "unsupported_architecture", "Embedded mode requires AArch64"
             )
         _prepare_directories(self._root)
-        archive = _select_archive(self._root / "uploads")
-        archive.chmod(0o600)
         runtime_manifest = _verify_runtime(self._root / "runtime" / RUNTIME_CURRENT)
+        try:
+            archive = _select_archive(self._root / "uploads")
+        except OwletRuntimeError as err:
+            if err.code != "missing_apk":
+                raise
+            extracted = _load_persisted_application(self._root / "extracted")
+            reports = _inspect_libraries(extracted)
+            if extracted.sdk_key is None:
+                raise OwletRuntimeError(
+                    "missing_sdk_key", "Stored application SDK key is missing"
+                ) from err
+            return (
+                PreparedRuntime(
+                    manifest=runtime_manifest,
+                    library_directory=(
+                        next(iter(extracted.libraries.values())).path.parent
+                    ),
+                    libraries=reports,
+                    source_sha256=extracted.source_sha256,
+                    package_name=extracted.package_name,
+                    app_version=extracted.app_version,
+                    stream_helper_available=(
+                        "bin/stream_capture" in runtime_manifest.files
+                    ),
+                ),
+                bytearray(extracted.sdk_key),
+            )
+        archive.chmod(0o600)
         temporary = Path(
             tempfile.mkdtemp(
                 prefix=f"extract-{_PROCESS_SESSION}-", dir=self._root / "tmp"
@@ -958,9 +1110,12 @@ class OwletRuntimeManager:
             final_root = self._root / "extracted" / extracted.source_sha256
             final_library_directory = final_root / extracted.abi
             if final_root.exists():
+                _verify_extraction_root(final_root, self._root / "extracted")
                 _verify_persisted_libraries(final_library_directory, extracted)
             else:
                 os.replace(temporary, final_root)
+            _persist_sdk_key(final_root / ".sdk-key", extracted.sdk_key)
+            _persist_extraction_metadata(final_root / "application.json", extracted)
             for path in final_library_directory.iterdir():
                 path.chmod(0o500)
             return (
@@ -969,6 +1124,8 @@ class OwletRuntimeManager:
                     library_directory=final_library_directory,
                     libraries=reports,
                     source_sha256=extracted.source_sha256,
+                    package_name=extracted.package_name,
+                    app_version=extracted.app_version,
                     stream_helper_available=(
                         "bin/stream_capture" in runtime_manifest.files
                     ),
@@ -1039,12 +1196,224 @@ def _optional_isoformat(value: datetime | None) -> str | None:
 
 def _prepare_directories(root: Path) -> None:
     root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    if root.is_symlink() or not root.is_dir():
+        raise OwletRuntimeError(
+            "invalid_runtime_storage", "Runtime storage path is unsafe"
+        )
     root.chmod(0o700)
     for name in ("uploads", "extracted", "runtime", "logs", "state", "tmp"):
         path = root / name
         path.mkdir(mode=0o700, exist_ok=True)
+        if path.is_symlink() or not path.is_dir():
+            raise OwletRuntimeError(
+                "invalid_runtime_storage", "Runtime storage path is unsafe"
+            )
         path.chmod(0o700)
     _remove_stale_extractions(root / "tmp")
+
+
+def _persist_sdk_key(path: Path, sdk_key: bytes | None) -> None:
+    """Atomically retain the user-supplied key for archive-free restarts."""
+    if sdk_key is None:
+        raise OwletRuntimeError("missing_sdk_key", "Application SDK key is missing")
+    descriptor, raw_path = tempfile.mkstemp(prefix=".sdk-key-", dir=path.parent)
+    temporary = Path(raw_path)
+    try:
+        os.fchmod(descriptor, 0o600)
+        remaining = memoryview(sdk_key)
+        while remaining:
+            written = os.write(descriptor, remaining)
+            if written <= 0:
+                raise OSError("SDK key write did not make progress")
+            remaining = remaining[written:]
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    except OSError as err:
+        raise OwletRuntimeError(
+            "runtime_state_write_failed", "Application runtime state could not be saved"
+        ) from err
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+
+
+def _persist_extraction_metadata(
+    path: Path, extracted: ExtractedOwletApplication
+) -> None:
+    """Persist only non-secret application metadata beside private libraries."""
+    document = {
+        "schema_version": 1,
+        "source_sha256": extracted.source_sha256,
+        "abi": extracted.abi,
+        "package_name": extracted.package_name,
+        "app_version": extracted.app_version,
+    }
+    _atomic_private_write(
+        path, json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+    )
+
+
+def _atomic_private_write(path: Path, content: bytes) -> None:
+    descriptor, raw_path = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
+    temporary = Path(raw_path)
+    try:
+        os.fchmod(descriptor, 0o600)
+        remaining = memoryview(content)
+        while remaining:
+            written = os.write(descriptor, remaining)
+            if written <= 0:
+                raise OSError("Private metadata write did not make progress")
+            remaining = remaining[written:]
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    except OSError as err:
+        raise OwletRuntimeError(
+            "runtime_state_write_failed", "Application runtime state could not be saved"
+        ) from err
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+
+
+def _load_persisted_application(root: Path) -> ExtractedOwletApplication:
+    """Load only private, structurally verified files previously extracted by us."""
+    candidates = [
+        path
+        for path in root.iterdir()
+        if path.is_dir() and not path.is_symlink() and len(path.name) == 64
+    ]
+    if not candidates:
+        raise OwletRuntimeError("missing_apk", "Upload an Owlet application package")
+    selected = max(candidates, key=lambda path: path.stat().st_mtime_ns)
+    library_directory = selected / "arm64-v8a"
+    sdk_path = selected / ".sdk-key"
+    if library_directory.is_symlink() or not library_directory.is_dir():
+        raise OwletRuntimeError(
+            "missing_arm64_split", "Stored ARM64 application libraries are missing"
+        )
+    _verify_private_secret_file(sdk_path, selected)
+    sdk_key = sdk_path.read_bytes()
+    if not 32 <= len(sdk_key) <= 512 or not sdk_key.isascii():
+        raise OwletRuntimeError(
+            "missing_sdk_key", "Stored application SDK key is invalid"
+        )
+    libraries: dict[str, ExtractedLibrary] = {}
+    for name in sorted(REQUIRED_LIBRARIES):
+        path = library_directory / name
+        try:
+            _verify_regular_file(path, library_directory)
+            metadata = path.stat()
+        except (OSError, OwletRuntimeError) as err:
+            raise OwletRuntimeError(
+                "missing_library", "A stored native library is missing"
+            ) from err
+        libraries[name] = ExtractedLibrary(
+            name=name,
+            path=path,
+            sha256=_sha256(path),
+            size=metadata.st_size,
+        )
+    package_name, app_version = _load_extraction_metadata(
+        selected / "application.json", selected.name
+    )
+    return ExtractedOwletApplication(
+        source_sha256=selected.name,
+        abi="arm64-v8a",
+        libraries=libraries,
+        package_name=package_name,
+        app_version=app_version,
+        sdk_key=sdk_key,
+    )
+
+
+def _load_extraction_metadata(
+    path: Path, source_sha256: str
+) -> tuple[str | None, str | None]:
+    try:
+        _verify_private_secret_file(path, path.parent)
+        document: object = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, OwletRuntimeError):
+        return None, None
+    if not isinstance(document, dict) or document.get("source_sha256") != source_sha256:
+        return None, None
+    package = document.get("package_name")
+    version = document.get("app_version")
+    return (
+        package if isinstance(package, str) else None,
+        version if isinstance(version, str) else None,
+    )
+
+
+def _verify_private_secret_file(path: Path, root: Path) -> None:
+    _verify_regular_file(path, root)
+    if stat.S_IMODE(path.stat().st_mode) & 0o077:
+        raise OwletRuntimeError(
+            "invalid_extracted_files", "Stored application files are not private"
+        )
+
+
+def _verify_extraction_root(path: Path, root: Path) -> None:
+    try:
+        metadata = path.lstat()
+        path.resolve().relative_to(root.resolve())
+    except (OSError, ValueError) as err:
+        raise OwletRuntimeError(
+            "invalid_extracted_files", "Extracted application path is unsafe"
+        ) from err
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise OwletRuntimeError(
+            "invalid_extracted_files", "Extracted application path is unsafe"
+        )
+
+
+def _delete_uploaded_archives(directory: Path) -> None:
+    """Delete only supported regular application archives from uploads."""
+    if not directory.exists() or directory.is_symlink():
+        return
+    for path in directory.iterdir():
+        if (
+            path.is_file()
+            and not path.is_symlink()
+            and path.suffix.lower() in SUPPORTED_ARCHIVE_SUFFIXES
+        ):
+            path.unlink()
+
+
+def _delete_proprietary_files(root: Path) -> None:
+    """Remove only integration-owned proprietary directories and state."""
+    _prepare_directories(root)
+    _delete_uploaded_archives(root / "uploads")
+    for name in ("extracted", "tmp"):
+        directory = root / name
+        if directory.is_symlink():
+            directory.unlink()
+        elif directory.is_dir():
+            shutil.rmtree(directory)
+        directory.mkdir(mode=0o700)
+    (root / "state" / _VALIDATION_MARKER).unlink(missing_ok=True)
+
+
+def _proprietary_files_present(root: Path) -> bool:
+    _prepare_directories(root)
+    uploads = any(
+        path.is_file()
+        and not path.is_symlink()
+        and path.suffix.lower() in SUPPORTED_ARCHIVE_SUFFIXES
+        for path in (root / "uploads").iterdir()
+    )
+    extracted = any(
+        path.is_dir() and not path.is_symlink()
+        for path in (root / "extracted").iterdir()
+    )
+    return uploads or extracted
 
 
 def _has_validation_marker(path: Path) -> bool:

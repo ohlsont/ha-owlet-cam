@@ -165,6 +165,30 @@ All notable changes are documented here. Versions follow semantic versioning.
 - Milestone 6 is accepted under the user's revised validation scope. Formal
   two-hour/overnight, Companion-app, Dream-coexistence, physical-outage and
   additional reboot tests were explicitly waived and remain unperformed.
+- Implemented the Milestone 7 administrator-only Home Assistant runtime panel
+  and same-origin authenticated API. APK/APKM/XAPK/ZIP bodies stream to disk in
+  bounded chunks, use generated private filenames, expose upload progress, and
+  reject unsupported, oversized, empty, partial or symlink-directed uploads.
+- Added safe application package/version detection, private persisted SDK-key
+  recovery, verified-library names and hashes, ABI and secret-presence booleans,
+  runtime/stream counters, and coordinator facts to redacted diagnostics. No
+  paths, PIDs, media tokens or credential values are returned.
+- Uploaded archives are deleted after a successful extraction probe by default;
+  an explicit option retains them. A confirmation-gated admin action stops the
+  producer and deletes uploaded applications, extracted proprietary libraries,
+  the SDK key, temporary material and validation state while preserving the
+  open-source helper runtime.
+- Added actionable auto-resolving Repairs for missing/invalid applications,
+  missing ARM64 splits/libraries/SDK keys, unsafe storage, incompatible native
+  libraries, missing/invalid/checksum-failed/obsolete helper runtimes,
+  reauthentication and repeated stream recovery failure.
+- Added disabled-by-default authentication-test and restart-stream entities plus
+  corresponding bounded panel controls. The panel also exposes the existing
+  runtime, frame and Core-local stream probes.
+- Current Milestone 7 local validation: 224 tests passed at 85.03%
+  branch-aware coverage. Ruff, mypy, JSON validation, JavaScript syntax,
+  release validation, secret scan and diff whitespace checks passed. Yellow
+  panel/upload/delete validation remains unperformed, so the gate is pending.
 
 ## [0.2.0] - Unreleased
 

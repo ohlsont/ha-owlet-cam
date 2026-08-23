@@ -28,6 +28,18 @@ _STREAM_PROBE = ButtonEntityDescription(
     entity_category=EntityCategory.DIAGNOSTIC,
     entity_registry_enabled_default=False,
 )
+_AUTHENTICATION_TEST = ButtonEntityDescription(
+    key="run_authentication_test",
+    translation_key="run_authentication_test",
+    entity_category=EntityCategory.DIAGNOSTIC,
+    entity_registry_enabled_default=False,
+)
+_RESTART_STREAM = ButtonEntityDescription(
+    key="restart_embedded_stream",
+    translation_key="restart_embedded_stream",
+    entity_category=EntityCategory.DIAGNOSTIC,
+    entity_registry_enabled_default=False,
+)
 
 
 async def async_setup_entry(
@@ -44,6 +56,8 @@ async def async_setup_entry(
             OwletCamRuntimeProbeButton(entry, description=_RUNTIME_PROBE),
             OwletCamRuntimeProbeButton(entry, description=_FRAME_PROBE),
             OwletCamRuntimeProbeButton(entry, description=_STREAM_PROBE),
+            OwletCamRuntimeProbeButton(entry, description=_AUTHENTICATION_TEST),
+            OwletCamRuntimeProbeButton(entry, description=_RESTART_STREAM),
         ]
     )
 
@@ -75,6 +89,10 @@ class OwletCamRuntimeProbeButton(OwletCamRuntimeEntity, ButtonEntity):
         """Enforce architecture and previous-gate requirements."""
         if self.entity_description.key == _STREAM_PROBE.key:
             return self.runtime_manager.stream_available
+        if self.entity_description.key == _RESTART_STREAM.key:
+            return self.runtime_manager.stream_available
+        if self.entity_description.key == _AUTHENTICATION_TEST.key:
+            return True
         if self.entity_description.key == _FRAME_PROBE.key:
             return self.runtime_manager.frame_probe_available
         return self.runtime_manager.supported_architecture
@@ -84,6 +102,10 @@ class OwletCamRuntimeProbeButton(OwletCamRuntimeEntity, ButtonEntity):
         try:
             if self.entity_description.key == _STREAM_PROBE.key:
                 await self.runtime_manager.async_run_stream_probe()
+            elif self.entity_description.key == _RESTART_STREAM.key:
+                await self.runtime_manager.async_restart_stream()
+            elif self.entity_description.key == _AUTHENTICATION_TEST.key:
+                await self.runtime_manager.async_run_authentication_test()
             elif self.entity_description.key == _FRAME_PROBE.key:
                 await self.runtime_manager.async_run_frame_probe()
             else:

@@ -37,6 +37,7 @@ from .const import (
     CONF_PREFER_DIRECT_P2P,
     CONF_RECONNECT_BACKOFF,
     CONF_REGION,
+    CONF_RETAIN_APPLICATION,
     CONF_RUNTIME_CHANNEL,
     CONF_STREAM_QUALITY,
     CONF_UPDATE_INTERVAL,
@@ -48,6 +49,7 @@ from .const import (
     DEFAULT_NO_FRAME_TIMEOUT,
     DEFAULT_PREFER_DIRECT_P2P,
     DEFAULT_RECONNECT_BACKOFF,
+    DEFAULT_RETAIN_APPLICATION,
     DEFAULT_RUNTIME_CHANNEL,
     DEFAULT_STREAM_QUALITY,
     DEFAULT_UPDATE_INTERVAL,
@@ -356,6 +358,12 @@ class OwletCamOptionsFlow(config_entries.OptionsFlow):
                         default=options.get(
                             CONF_EXPERIMENTAL_LOCAL_SENSORS,
                             DEFAULT_EXPERIMENTAL_LOCAL_SENSORS,
+                        ),
+                    ): bool,
+                    vol.Required(
+                        CONF_RETAIN_APPLICATION,
+                        default=options.get(
+                            CONF_RETAIN_APPLICATION, DEFAULT_RETAIN_APPLICATION
                         ),
                     ): bool,
                 }

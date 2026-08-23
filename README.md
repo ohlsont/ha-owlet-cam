@@ -4,7 +4,7 @@ Owlet Cam is a clean-room Home Assistant custom integration intended to expose
 Owlet cameras as native camera and room-sensor entities. It is not affiliated
 with, endorsed by, or supported by Owlet or ThroughTek.
 
-## Current status: Milestone 6 accepted with documented validation waivers
+## Current status: Milestone 7 implemented locally; Yellow gate pending
 
 Version `0.2.0` implements clean-room, asynchronous Owlet cloud authentication
 and camera KMS validation. Embedded Experimental setup can validate a European
@@ -142,6 +142,25 @@ coexistence, physical-outage and additional Yellow-reboot checks. Milestone 6
 is accepted under that revised validation scope; those checks remain listed as
 unperformed and are not implied to have passed.
 
+Milestone 7 adds an administrator-only **Owlet Cam Runtime** sidebar panel. It
+streams APK/APKM/XAPK/ZIP uploads directly to a generated mode-0600 file under
+`userfiles/uploads`, shows upload progress, exposes only redacted runtime facts,
+and provides bounded authentication, runtime, frame, stream-health and restart
+controls. The default behavior deletes the uploaded archive after successful
+extraction; a grouped embedded option can retain it. The extracted ARM64
+libraries and SDK key remain private so automatic post-restart validation can
+continue without asking for the archive again. A confirmation-gated action
+deletes all uploaded applications, extracted proprietary libraries and stored
+SDK material while retaining the verified open-source helper runtime.
+
+Actionable Home Assistant Repairs now track missing/incomplete applications,
+wrong architecture, missing libraries or SDK key, unsafe storage, checksum and
+runtime incompatibility, reauthentication, obsolete helpers, and repeated
+stream recovery failure. Resolved conditions remove their issue automatically.
+This implementation passes local automated validation, but the panel/upload/
+delete workflow has not yet been deployed and exercised on Yellow, so
+Milestone 7 is not accepted yet.
+
 ## Planned runtime modes
 
 - **External bridge** will be the first production-capable camera mode. It will
@@ -184,16 +203,19 @@ is available only when Core starts with `OWLET_CAM_DEV_MODE=1`.
 Configuration, reauthentication, reconfiguration, and grouped general/embedded
 options are implemented in the UI. Defaults favor stability and coexistence:
 keep-warm, audio, direct-P2P preference, and experimental local sensors are all
-off. Real Yellow UI video was visually verified, but no screenshot containing
-the user's room is committed to this repository.
+off. Retaining the uploaded application is also off by default. Administrators
+manage user-supplied application files and native probes from the **Owlet Cam
+Runtime** sidebar panel. Real Yellow UI video was visually verified, but no
+screenshot containing the user's room is committed to this repository.
 
 ## Privacy and security
 
 Account email and password live in Home Assistant config-entry data. Short-lived
-Firebase and KMS camera credentials are kept only in memory. Private runtime
-files will be kept
-under `custom_components/owlet_cam/userfiles/`, which HACS preserves but Git and
-release checks exclude. See [SECURITY.md](SECURITY.md).
+Firebase and KMS camera credentials are kept only in memory. User-supplied
+libraries and the extracted SDK key are private mode-0500/mode-0600 files under
+`custom_components/owlet_cam/userfiles/`, which HACS preserves but Git and
+release checks exclude. The authenticated panel can delete all proprietary
+material. See [SECURITY.md](SECURITY.md).
 
 ## Known limitations
 
@@ -250,6 +272,11 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   flow rejects that typo rather than silently changing it.
 - Authentication errors can be corrected from the integration's reauthenticate
   action without creating a duplicate entry.
+- Application and native-runtime problems appear as actionable Home Assistant
+  Repairs. Open **Owlet Cam Runtime** as an administrator to upload a replacement
+  package, rerun a bounded probe, restart the stream, or delete proprietary
+  files. Upload filenames are ignored; supported formats are APK, APKM, XAPK
+  and ZIP up to 512 MiB.
 - The cloud probe requires an Owlet email/password login. If the account was
   created with Apple or Google sign-in, first verify that a typed Owlet password
   works in the official app; an active app session alone is not evidence that

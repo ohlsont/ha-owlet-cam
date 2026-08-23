@@ -7,6 +7,8 @@ from homeassistant.const import CONF_PASSWORD as HA_CONF_PASSWORD
 from homeassistant.const import Platform
 
 DOMAIN: Final = "owlet_cam"
+INTEGRATION_VERSION: Final = "0.2.0"
+EXPECTED_HELPER_VERSION: Final = "0.6.0-dev"
 PLATFORMS: Final = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
@@ -41,6 +43,7 @@ CONF_RECONNECT_BACKOFF: Final = "reconnect_backoff"
 CONF_NO_FRAME_TIMEOUT: Final = "no_frame_timeout"
 CONF_PREFER_DIRECT_P2P: Final = "prefer_direct_p2p"
 CONF_EXPERIMENTAL_LOCAL_SENSORS: Final = "experimental_local_sensors"
+CONF_RETAIN_APPLICATION: Final = "retain_uploaded_application"
 
 DEFAULT_UPDATE_INTERVAL: Final = 300
 DEFAULT_KEEP_WARM: Final = False
@@ -53,7 +56,11 @@ DEFAULT_RECONNECT_BACKOFF: Final = 30
 DEFAULT_NO_FRAME_TIMEOUT: Final = 15
 DEFAULT_PREFER_DIRECT_P2P: Final = False
 DEFAULT_EXPERIMENTAL_LOCAL_SENSORS: Final = False
+DEFAULT_RETAIN_APPLICATION: Final = False
 DEFAULT_COORDINATOR_INTERVAL: Final = timedelta(seconds=DEFAULT_UPDATE_INTERVAL)
+
+PANEL_URL_PATH: Final = "owlet-cam-runtime"
+STATIC_URL_PATH: Final = "/owlet_cam_static"
 
 STATUS_READY: Final = "ready"
 

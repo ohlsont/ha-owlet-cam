@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import io
+import json
 import stat
+import struct
 import tempfile
 import zipfile
 from pathlib import Path
@@ -15,13 +17,16 @@ from custom_components.owlet_cam.runtime.apk import (
     REQUIRED_LIBRARIES,
     ArchiveLimits,
     OwletArchiveError,
+    _parse_binary_android_manifest,
     extract_owlet_application,
 )
 
 _FIXTURE_KEY = b"AQ" + b"fixture-only-not-a-real-key-0123456789"
 
 
-def _application_zip(*, abi: str = "arm64-v8a", include_key: bool = True) -> bytes:
+def _application_zip(
+    *, abi: str = "arm64-v8a", include_key: bool = True, include_manifest: bool = False
+) -> bytes:
     result = io.BytesIO()
     with zipfile.ZipFile(result, "w") as archive:
         for name in REQUIRED_LIBRARIES:
@@ -30,6 +35,16 @@ def _application_zip(*, abi: str = "arm64-v8a", include_key: bool = True) -> byt
         if include_key:
             dex += b"\0" + _FIXTURE_KEY + b"\0"
         archive.writestr("classes.dex", dex)
+        if include_manifest:
+            archive.writestr(
+                "manifest.json",
+                json.dumps(
+                    {
+                        "package_name": "com.example.fixture",
+                        "version_name": "9.8.7",
+                    }
+                ),
+            )
     return result.getvalue()
 
 
@@ -64,6 +79,49 @@ def test_extracts_nested_apkm_split(tmp_path: Path) -> None:
 
     assert set(result.libraries) == REQUIRED_LIBRARIES
     assert result.sdk_key_found is True
+
+
+def test_reads_non_secret_application_metadata(tmp_path: Path) -> None:
+    source = _write_archive(
+        tmp_path / "owlet.xapk", _application_zip(include_manifest=True)
+    )
+
+    result = extract_owlet_application(source, tmp_path / "out")
+
+    assert result.package_name == "com.example.fixture"
+    assert result.app_version == "9.8.7"
+
+
+def test_reads_binary_android_manifest_string_pool() -> None:
+    values = ["android.permission.CAMERA", "com.owletcare.fixture", "4.5.6"]
+    encoded = [
+        bytes((len(value), len(value))) + value.encode() + b"\0" for value in values
+    ]
+    header_size = 28 + len(values) * 4
+    offsets: list[int] = []
+    strings = b""
+    for value in encoded:
+        offsets.append(len(strings))
+        strings += value
+    chunk_size = header_size + len(strings)
+    pool = (
+        struct.pack("<HHI", 0x0001, header_size, chunk_size)
+        + struct.pack("<IIIII", len(values), 0, 0x100, header_size, 0)
+        + b"".join(struct.pack("<I", offset) for offset in offsets)
+        + strings
+    )
+    manifest = struct.pack("<HHI", 0x0003, 8, 8 + len(pool)) + pool
+
+    package, version = _parse_binary_android_manifest(manifest)
+
+    assert package == "com.owletcare.fixture"
+    assert version == "4.5.6"
+
+
+@pytest.mark.parametrize("payload", [b"", b"\x03\x00\x08\x00\xff\xff\xff\xff"])
+def test_rejects_malformed_binary_android_manifest(payload: bytes) -> None:
+    with pytest.raises(ValueError, match="manifest"):
+        _parse_binary_android_manifest(payload)
 
 
 def test_spools_nested_apk_to_private_disk_file(tmp_path: Path) -> None:

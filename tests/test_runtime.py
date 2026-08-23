@@ -708,6 +708,19 @@ def test_verifies_checksum_pinned_runtime_tree(tmp_path: Path) -> None:
     assert manifest.architecture == "aarch64"
 
 
+def test_rejects_symlinked_runtime_storage(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "userfiles"
+    root.mkdir()
+    (root / "uploads").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(OwletRuntimeError) as caught:
+        _prepare_directories(root)
+
+    assert caught.value.code == "invalid_runtime_storage"
+
+
 def test_rejects_runtime_checksum_mismatch(tmp_path: Path) -> None:
     root = tmp_path / "current"
     _runtime_tree(root)
@@ -1701,17 +1714,54 @@ def test_manager_prepares_and_reuses_safe_user_extraction(
     ):
         prepared, first_key = manager._prepare_sync()
         reused, second_key = manager._prepare_sync()
+        archive.unlink()
+        persisted, third_key = manager._prepare_sync()
 
     assert prepared.source_sha256 == reused.source_sha256
     assert len(prepared.libraries) == 5
-    assert inspect.call_count == 10
+    assert persisted.source_sha256 == prepared.source_sha256
+    assert inspect.call_count == 15
     assert first_key == sdk_key
     assert second_key == sdk_key
-    assert archive.stat().st_mode & 0o777 == 0o600
+    assert third_key == sdk_key
+    assert not archive.exists()
+    assert (
+        prepared.library_directory.parent / ".sdk-key"
+    ).stat().st_mode & 0o777 == 0o600
+    assert (
+        prepared.library_directory.parent / "application.json"
+    ).stat().st_mode & 0o777 == 0o600
     assert all(
         path.stat().st_mode & 0o777 == 0o500
         for path in prepared.library_directory.iterdir()
     )
+
+
+async def test_manager_deletes_only_proprietary_material(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    root = tmp_path / "userfiles"
+    for name in ("uploads", "extracted", "runtime", "logs", "state", "tmp"):
+        (root / name).mkdir(parents=True, exist_ok=True)
+    (root / "uploads" / "fixture.apk").write_bytes(b"private")
+    (root / "extracted" / "hash" / "arm64-v8a").mkdir(parents=True)
+    (root / "extracted" / "hash" / ".sdk-key").write_bytes(b"private")
+    (root / "runtime" / "open-source-helper").write_bytes(b"retain")
+    manager = OwletRuntimeManager(
+        hass,
+        root=root,
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+    )
+    manager._sdk_key = bytearray(b"fixture-private-key")
+
+    await manager.async_delete_proprietary_files()
+
+    assert not list((root / "uploads").iterdir())
+    assert not list((root / "extracted").iterdir())
+    assert (root / "runtime" / "open-source-helper").read_bytes() == b"retain"
+    assert manager._sdk_key is None
+    assert manager.snapshot.proprietary_files_present is False
 
 
 @pytest.mark.parametrize(

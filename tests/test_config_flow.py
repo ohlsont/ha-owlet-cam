@@ -30,6 +30,7 @@ from custom_components.owlet_cam.const import (
     CONF_PREFER_DIRECT_P2P,
     CONF_RECONNECT_BACKOFF,
     CONF_REGION,
+    CONF_RETAIN_APPLICATION,
     CONF_RUNTIME_CHANNEL,
     CONF_STREAM_QUALITY,
     CONF_UPDATE_INTERVAL,
@@ -339,6 +340,7 @@ async def test_options_are_grouped_and_reload_exactly_once(
         CONF_NO_FRAME_TIMEOUT: 15,
         CONF_PREFER_DIRECT_P2P: False,
         CONF_EXPERIMENTAL_LOCAL_SENSORS: False,
+        CONF_RETAIN_APPLICATION: False,
     }
     with patch.object(hass.config_entries, "async_schedule_reload") as schedule_reload:
         result = await hass.config_entries.options.async_init(entry.entry_id)

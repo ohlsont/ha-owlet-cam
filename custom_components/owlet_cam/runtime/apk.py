@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import stat
+import struct
 import tempfile
 import zipfile
 from dataclasses import dataclass, field
@@ -28,6 +30,8 @@ REQUIRED_LIBRARIES: Final = frozenset(
 # deliberately broad: the actual key is user-supplied material and must never be
 # hard-coded into this repository.
 _SDK_KEY_RE: Final = re.compile(rb"(?<![A-Za-z0-9+/=_-])AQ[A-Za-z0-9+/=_-]{30,510}")
+_PACKAGE_NAME_RE: Final = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+){2,}$")
+_VERSION_NAME_RE: Final = re.compile(r"^\d+(?:\.\d+){1,3}(?:[-+][A-Za-z0-9._-]+)?$")
 _SCAN_SUFFIXES: Final = frozenset({".dex", ".so"})
 _COPY_CHUNK: Final = 1024 * 1024
 _SCAN_OVERLAP: Final = 520
@@ -35,6 +39,10 @@ _SCAN_OVERLAP: Final = 520
 
 class OwletArchiveError(ValueError):
     """Raised when an application archive fails a safety or content gate."""
+
+    def __init__(self, message: str, *, code: str = "invalid_apk") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +78,8 @@ class ExtractedOwletApplication:
     source_sha256: str
     abi: str
     libraries: dict[str, ExtractedLibrary]
+    package_name: str | None = None
+    app_version: str | None = None
     sdk_key: bytes | None = field(default=None, repr=False)
 
     @property
@@ -102,6 +112,8 @@ class _ExtractionState:
     budget: _Budget
     libraries: dict[str, ExtractedLibrary] = field(default_factory=dict)
     sdk_candidates: set[bytes] = field(default_factory=set)
+    package_name: str | None = None
+    app_version: str | None = None
 
 
 def extract_owlet_application(
@@ -139,7 +151,8 @@ def extract_owlet_application(
     if missing:
         raise OwletArchiveError(
             "Application archive is missing required ARM64 libraries: "
-            + ", ".join(missing)
+            + ", ".join(missing),
+            code=("missing_arm64_split" if not state.libraries else "missing_library"),
         )
     if len(state.sdk_candidates) > 1:
         raise OwletArchiveError("Application archive contains ambiguous SDK keys")
@@ -149,6 +162,8 @@ def extract_owlet_application(
         source_sha256=source_sha256,
         abi=target_abi,
         libraries=dict(sorted(state.libraries.items())),
+        package_name=state.package_name,
+        app_version=state.app_version,
         sdk_key=sdk_key,
     )
 
@@ -189,6 +204,16 @@ def _process_zip(source: IO[bytes], state: _ExtractionState, *, depth: int) -> N
             state.budget.account(info)
             member = PurePosixPath(info.filename)
             basename = member.name
+
+            if basename == "manifest.json" and info.file_size <= 1024 * 1024:
+                with archive.open(info, "r") as data:
+                    _read_json_manifest(data, info.file_size, state)
+                continue
+
+            if basename == "AndroidManifest.xml" and info.file_size <= 2 * 1024 * 1024:
+                with archive.open(info, "r") as data:
+                    _read_android_manifest(data, info.file_size, state)
+                continue
 
             if _is_target_library(member, basename, state.target_abi):
                 with archive.open(info, "r") as data:
@@ -308,6 +333,139 @@ def _copy_limited(source: IO[bytes], target: IO[bytes], maximum: int) -> None:
         if written > maximum:
             raise OwletArchiveError("Nested APK exceeds the size limit")
         target.write(chunk)
+
+
+def _read_json_manifest(
+    source: IO[bytes], expected_size: int, state: _ExtractionState
+) -> None:
+    try:
+        payload = _read_exact_limited(source, expected_size, 1024 * 1024)
+        document = json.loads(payload)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        return
+    if not isinstance(document, dict):
+        return
+    version = document.get("version_name", document.get("versionName"))
+    package = document.get("package_name", document.get("package"))
+    if state.app_version is None and isinstance(version, str) and len(version) <= 64:
+        state.app_version = version
+    if state.package_name is None and isinstance(package, str) and len(package) <= 255:
+        state.package_name = package
+
+
+def _read_android_manifest(
+    source: IO[bytes], expected_size: int, state: _ExtractionState
+) -> None:
+    """Read only package/version strings from Android's binary XML format."""
+    try:
+        payload = _read_exact_limited(source, expected_size, 2 * 1024 * 1024)
+        package, version = _parse_binary_android_manifest(payload)
+    except (OSError, UnicodeError, ValueError, struct.error):
+        return
+    if state.package_name is None:
+        state.package_name = package
+    if state.app_version is None:
+        state.app_version = version
+
+
+def _read_exact_limited(source: IO[bytes], expected: int, maximum: int) -> bytes:
+    if expected < 0 or expected > maximum:
+        raise ValueError("Manifest size is outside its limit")
+    payload = source.read(maximum + 1)
+    if len(payload) != expected or len(payload) > maximum:
+        raise ValueError("Manifest entry size is inconsistent")
+    return payload
+
+
+def _parse_binary_android_manifest(payload: bytes) -> tuple[str | None, str | None]:
+    if len(payload) < 8:
+        raise ValueError("Android manifest is truncated")
+    xml_type, header_size, total_size = struct.unpack_from("<HHI", payload)
+    if xml_type != 0x0003 or header_size < 8 or total_size > len(payload):
+        raise ValueError("Android manifest header is invalid")
+    strings: list[str] = []
+    offset = header_size
+    while offset + 8 <= total_size:
+        chunk_type, chunk_header, chunk_size = struct.unpack_from(
+            "<HHI", payload, offset
+        )
+        if (
+            chunk_size < chunk_header
+            or chunk_size < 8
+            or offset + chunk_size > total_size
+        ):
+            raise ValueError("Android manifest chunk is invalid")
+        if chunk_type == 0x0001:
+            strings.extend(
+                _parse_string_pool(payload, offset, chunk_header, chunk_size)
+            )
+        offset += chunk_size
+    packages = [value for value in strings if _PACKAGE_NAME_RE.fullmatch(value)]
+    versions = [value for value in strings if _VERSION_NAME_RE.fullmatch(value)]
+    package = next(
+        (value for value in packages if "owlet" in value.lower()),
+        packages[0] if packages else None,
+    )
+    return package, versions[0] if versions else None
+
+
+def _parse_string_pool(
+    payload: bytes, offset: int, header_size: int, chunk_size: int
+) -> list[str]:
+    if header_size < 28:
+        raise ValueError("Android string pool header is invalid")
+    string_count, _style_count, flags, strings_start = struct.unpack_from(
+        "<IIII", payload, offset + 8
+    )
+    if string_count > 100_000 or 28 + string_count * 4 > header_size:
+        raise ValueError("Android string pool count is invalid")
+    utf8 = bool(flags & 0x100)
+    result: list[str] = []
+    pool_end = offset + chunk_size
+    for index in range(string_count):
+        relative = struct.unpack_from("<I", payload, offset + 28 + index * 4)[0]
+        position = offset + strings_start + relative
+        if not offset <= position < pool_end:
+            raise ValueError("Android string offset is invalid")
+        result.append(_decode_pool_string(payload, position, pool_end, utf8))
+    return result
+
+
+def _decode_pool_string(payload: bytes, position: int, end: int, utf8: bool) -> str:
+    if utf8:
+        _, position = _decode_length8(payload, position, end)
+        length, position = _decode_length8(payload, position, end)
+        if position + length >= end:
+            raise ValueError("Android UTF-8 string is truncated")
+        return payload[position : position + length].decode("utf-8")
+    length, position = _decode_length16(payload, position, end)
+    byte_length = length * 2
+    if position + byte_length + 2 > end:
+        raise ValueError("Android UTF-16 string is truncated")
+    return payload[position : position + byte_length].decode("utf-16-le")
+
+
+def _decode_length8(payload: bytes, position: int, end: int) -> tuple[int, int]:
+    if position >= end:
+        raise ValueError("Android string length is truncated")
+    first = payload[position]
+    if first & 0x80:
+        if position + 1 >= end:
+            raise ValueError("Android string length is truncated")
+        return ((first & 0x7F) << 8) | payload[position + 1], position + 2
+    return first, position + 1
+
+
+def _decode_length16(payload: bytes, position: int, end: int) -> tuple[int, int]:
+    if position + 2 > end:
+        raise ValueError("Android string length is truncated")
+    first = struct.unpack_from("<H", payload, position)[0]
+    if first & 0x8000:
+        if position + 4 > end:
+            raise ValueError("Android string length is truncated")
+        second = struct.unpack_from("<H", payload, position + 2)[0]
+        return ((first & 0x7FFF) << 16) | second, position + 4
+    return first, position + 2
 
 
 def _hash_file(path: Path) -> str:
