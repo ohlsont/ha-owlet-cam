@@ -116,11 +116,17 @@ worked, standard `camera.snapshot` produced a valid JPEG, and
 one producer, two consumers, healthy media and zero reconnects; after the
 viewers closed, diagnostics reached idle with zero consumers. Automatic runtime
 revalidation now restores `ready` after a settled config-entry reload and after
-a cold Core restart without another button press. Reload still waits for active
-Home Assistant WebRTC consumers to close; after they close, reload completes
-and automatic recovery succeeds. The full gate is not passed because direct
-Core-namespace FFprobe, extended soaks, companion-app, outage and physical tests
-remain unperformed.
+a cold Core restart without another button press. Active-viewer reload is now
+bounded: entity removal stops Home Assistant's public camera-stream worker
+before the integration tears down its loopback source, and loopback shutdown
+does not wait indefinitely for a retained consumer connection. On Yellow a
+reload with the live camera dialog open returned in 4.318 seconds, the entry was
+already `loaded` at the first follow-up check, and no Owlet, demuxing or
+connection-refused system-log entry appeared. Closing and reopening the dialog
+after entity recreation displayed fresh real video; the already-open dialog did
+not automatically subscribe to the replacement entity. The full gate is not
+passed because direct Core-namespace FFprobe, extended soaks, companion-app,
+outage and physical tests remain unperformed.
 
 ## Planned runtime modes
 
@@ -180,10 +186,11 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 - The embedded camera's snapshot path and bounded continuous Home Assistant
   stream path have displayed real media on Yellow. The loopback source is
   timestamped MPEG-TS carrying copied H.264, not RTSP. The full live-stream gate
-  is incomplete: an active-viewer reload waits for those clients to close, and
-  long-duration, companion-app, outage and physical tests remain unperformed.
-  Settled reload and Core-restart recovery are automatic after the first
-  explicit native validation.
+  is incomplete because long-duration, companion-app, outage and physical tests
+  remain unperformed. Active-viewer reload, settled reload and Core-restart
+  recovery are automatic after the first explicit native validation. A camera
+  dialog already open across entity recreation must be closed and reopened to
+  subscribe to the replacement entity.
 - Cloud/KMS behavior has comprehensive sanitized fixture coverage and succeeded
   inside Home Assistant Core on Yellow. Wrong-password reauthentication and the
   complete Milestone 1 acceptance sequence remain unperformed.
@@ -207,8 +214,9 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   one producer with two consumers, zero reconnects, and a later idle state with
   zero consumers. Exact live codec profile, bitrate and a direct Core-namespace
   FFprobe capture were not recorded. Automatic post-restart and settled-reload
-  runtime recovery passed on Yellow; reload with an open WebRTC viewer still
-  waits for that Home Assistant-managed consumer to close.
+  runtime recovery passed on Yellow. A later active-viewer reload completed in
+  4.318 seconds with no new Owlet or stale-source error; closing and reopening
+  the retained dialog restored real video from the replacement entity.
 - The local brand art has not been submitted to Home Assistant Brands, so
   validation that requires the public Brands repository may remain pending.
 - The documentation and issue URLs assume future publication at

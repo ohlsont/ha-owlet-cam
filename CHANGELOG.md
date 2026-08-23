@@ -110,20 +110,27 @@ All notable changes are documented here. Versions follow semantic versioning.
   `camera.snapshot` JPEG, and a playable five-second `camera.record` MP4. Live
   diagnostics showed one producer, two consumers, healthy media, and zero
   reconnects; the final settled state was idle with zero consumers.
-- Reload while two viewers were active waited for Home Assistant's WebRTC
-  consumers to close. Added private prior-validation consent state so settled
-  reloads and restarts rerun every native safety gate automatically without a
-  second button press. Cold-start recovery waits for Home Assistant's public
-  startup-complete event; this passed on Yellow. Active-viewer reload still
-  waits until Home Assistant releases its consumer. Direct Core-namespace
-  FFprobe, two-hour/overnight soaks, companion app and physical outage tests
-  remain unperformed; the full Milestone 6 gate is therefore incomplete.
+- Reload while two viewers were active initially waited for Home Assistant's
+  retained media consumer. Added private prior-validation consent state so
+  settled reloads and restarts rerun every native safety gate automatically
+  without a second button press. Cold-start recovery waits for Home Assistant's
+  public startup-complete event; this passed on Yellow.
 - Corrected config-entry unload ordering so forwarded platforms unload before
   runtime shutdown, and cancel any startup-waiting recovery task on unload.
 - Corrected one-shot startup-listener cleanup after a Yellow log check caught a
   duplicate remove attempt; the final cold restart recovered automatically with
   no Owlet system-log entry and zero active Repairs.
-- Current automated validation: 161 tests passed at 85.81% branch-aware
+- Corrected active-viewer unload for Python 3.14: the loopback server closes and
+  bounds tracked client tasks before waiting for the listening server, and the
+  camera entity stops Home Assistant's public stream worker before removing the
+  integration-owned source. A Yellow reload with real video open returned in
+  4.318 seconds, recovered automatically, emitted no Owlet, demuxing or
+  connection-refused system-log entry, and displayed fresh real video after the
+  retained dialog was closed and reopened. Idle teardown subsequently passed.
+  Direct Core-namespace FFprobe, two-hour/overnight soaks, companion app and
+  physical outage tests remain unperformed; the full Milestone 6 gate is
+  therefore incomplete.
+- Current automated validation: 163 tests passed at 86.53% branch-aware
   coverage; Ruff and mypy passed. Two independent ARM64 helper builds produced
   the same proprietary-free archive.
 

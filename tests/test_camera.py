@@ -211,3 +211,17 @@ async def test_entity_removal_cancels_in_flight_snapshot(
 
     assert task.cancelled()
     assert camera._cached_image is None
+
+
+async def test_entity_removal_stops_home_assistant_stream(
+    hass: HomeAssistant,
+) -> None:
+    camera, _manager = _camera(hass)
+    stream = MagicMock()
+    stream.stop = AsyncMock()
+    camera.stream = stream
+
+    await camera.async_will_remove_from_hass()
+
+    stream.stop.assert_awaited_once()
+    assert camera.stream is None

@@ -13,6 +13,8 @@ _MAX_REQUEST_HEADERS: Final = 8192
 _MAX_GOP_BYTES: Final = 16 * 1024 * 1024
 _SUBSCRIBER_QUEUE_DEPTH: Final = 64
 _CLIENT_WRITE_TIMEOUT: Final = 10.0
+_CLIENT_CLOSE_TIMEOUT: Final = 1.0
+_CLIENT_TASK_STOP_TIMEOUT: Final = 3.0
 _TS_PACKET_SIZE: Final = 188
 _PAT_PID: Final = 0x0000
 _VIDEO_PID: Final = 0x0100
@@ -129,12 +131,23 @@ class H264LoopbackServer:
         self._server = None
         if server is not None:
             server.close()
-            await server.wait_closed()
         for queue in tuple(self._subscribers):
             self._disconnect_slow_subscriber(queue)
         self._subscribers.clear()
         if self._client_tasks:
-            await asyncio.gather(*tuple(self._client_tasks), return_exceptions=True)
+            tasks = tuple(self._client_tasks)
+            _done, pending = await asyncio.wait(
+                tasks, timeout=_CLIENT_TASK_STOP_TIMEOUT
+            )
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        if server is not None:
+            # Python 3.14 waits for accepted connections as well as the
+            # listening socket. Close our tracked responses first so a
+            # retained go2rtc consumer cannot deadlock config-entry unload.
+            await server.wait_closed()
         self._parameter_sets.clear()
         self._gop.clear()
         self._gop_bytes = 0
@@ -216,8 +229,14 @@ class H264LoopbackServer:
                 if not self._subscribers and not self._stopping:
                     await self._on_last_client()
             writer.close()
-            with suppress(ConnectionError):
-                await writer.wait_closed()
+            try:
+                async with asyncio.timeout(_CLIENT_CLOSE_TIMEOUT):
+                    await writer.wait_closed()
+            except (ConnectionError, TimeoutError):
+                # A Home Assistant/go2rtc WebRTC consumer may retain its source
+                # TCP connection until the frontend session is closed. Entry
+                # unload must not wait indefinitely for that remote lifecycle.
+                writer.transport.abort()
             if current_task is not None:
                 self._client_tasks.discard(current_task)
 

@@ -7,7 +7,7 @@ import shlex
 import time
 from contextlib import suppress
 from pathlib import Path
-from typing import Final, override
+from typing import Final, Protocol, override
 
 from haffmpeg.tools import IMAGE_JPEG, ImageFrame
 from homeassistant.components.camera import Camera, CameraEntityFeature
@@ -22,6 +22,13 @@ from .runtime.manager import OwletRuntimeError
 _SNAPSHOT_CACHE_SECONDS: Final = 5.0
 _SNAPSHOT_DECODE_TIMEOUT: Final = 10.0
 _MAX_JPEG_BYTES: Final = 16 * 1024 * 1024
+
+
+class _StoppableStream(Protocol):
+    """Public Home Assistant stream lifecycle surface used on unload."""
+
+    async def stop(self) -> None:
+        """Stop the stream worker."""
 
 
 async def async_setup_entry(
@@ -40,6 +47,7 @@ class OwletCamEmbeddedCamera(OwletCamRuntimeEntity, Camera):
     """Expose snapshots and a timestamped loopback media source after its gate."""
 
     _attr_name = None
+    stream: _StoppableStream | None
 
     def __init__(self, entry: OwletCamConfigEntry) -> None:
         Camera.__init__(self)
@@ -153,7 +161,15 @@ class OwletCamEmbeddedCamera(OwletCamRuntimeEntity, Camera):
 
     @override
     async def async_will_remove_from_hass(self) -> None:
-        """Cancel an in-flight capture/decode before entity removal."""
+        """Stop HA media work and cancel capture before entity removal."""
+        stream = self.stream
+        self.stream = None
+        if stream is not None:
+            # Stream.stop() is Home Assistant's public lifecycle boundary for
+            # its FFmpeg/PyAV worker. Stop it while our loopback source is
+            # still alive so reload does not leave a worker retrying a stale
+            # per-entry URL.
+            await stream.stop()
         task = self._active_snapshot_task
         if task is not None and task is not asyncio.current_task() and not task.done():
             task.cancel()

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from urllib.parse import urlsplit
 
+import pytest
+
+from custom_components.owlet_cam.runtime import stream as stream_module
 from custom_components.owlet_cam.runtime.stream import (
     H264LoopbackServer,
     _annex_b_nal_types,
@@ -121,6 +125,41 @@ async def test_loopback_server_rejects_unknown_path_without_starting_producer(
     writer.close()
     await writer.wait_closed()
     await server.async_stop()
+
+
+async def test_loopback_server_shutdown_does_not_wait_for_retained_consumer(
+    socket_enabled: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = H264LoopbackServer(
+        on_first_client=_noop,
+        on_last_client=_noop,
+    )
+    url = await server.async_start()
+    reader, writer = await _open_stream(url)
+    assert b"200 OK" in await reader.readuntil(b"\r\n\r\n")
+    assert server.client_count == 1
+
+    original_wait_closed = asyncio.StreamWriter.wait_closed
+    never_closed = asyncio.Event()
+
+    async def retained_wait_closed(_writer: asyncio.StreamWriter) -> None:
+        await never_closed.wait()
+
+    monkeypatch.setattr(asyncio.StreamWriter, "wait_closed", retained_wait_closed)
+    monkeypatch.setattr(stream_module, "_CLIENT_CLOSE_TIMEOUT", 0.01)
+    monkeypatch.setattr(stream_module, "_CLIENT_TASK_STOP_TIMEOUT", 0.05)
+
+    started = time.monotonic()
+    await server.async_stop()
+
+    assert time.monotonic() - started < 0.5
+    assert server.url is None
+    assert server.client_count == 0
+    assert not server._client_tasks
+    monkeypatch.setattr(asyncio.StreamWriter, "wait_closed", original_wait_closed)
+    writer.close()
+    await original_wait_closed(writer)
 
 
 async def _open_stream(
