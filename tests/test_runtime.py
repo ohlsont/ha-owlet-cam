@@ -447,6 +447,14 @@ async def test_process_runner_scrubs_stdin_and_bounds_output(tmp_path: Path) -> 
     assert result.stdout == b"{}"
     assert secret == bytearray(len(secret))
     assert not runner.running
+    assert runner.diagnostics() == {
+        "active": False,
+        "started_count": 1,
+        "reaped_count": 1,
+        "all_reaped": True,
+        "forced_kill_count": 0,
+        "last_exit_reason": "exited",
+    }
 
 
 async def test_process_runner_applies_only_explicit_non_secret_environment(
@@ -477,6 +485,7 @@ async def test_process_runner_times_out_and_reaps_child(tmp_path: Path) -> None:
         await runner.async_run(command, timeout_seconds=0.01, cwd=tmp_path)
 
     assert not runner.running
+    assert runner.diagnostics()["all_reaped"] is True
 
 
 async def test_process_runner_stops_active_probe(tmp_path: Path) -> None:
@@ -588,7 +597,7 @@ async def test_process_runner_terminates_stream_after_no_frame_timeout(
         "import sys,time; sys.stdin.buffer.read(); time.sleep(10)",
     )
 
-    with pytest.raises(OwletHelperProcessError, match="no media frames"):
+    with pytest.raises(OwletHelperProcessError, match="no media frames") as caught:
         await runner.async_stream(
             command,
             stdin=payload,
@@ -599,6 +608,8 @@ async def test_process_runner_terminates_stream_after_no_frame_timeout(
 
     assert payload == bytearray(len(payload))
     assert not runner.running
+    assert caught.value.code == "stream_no_frames"
+    assert runner.diagnostics()["all_reaped"] is True
 
 
 def _library_probe_output() -> bytes:
@@ -1343,7 +1354,9 @@ async def test_stream_probe_status_does_not_reject_its_first_consumer(
 
 
 async def test_live_stream_recovers_after_helper_failure_with_fresh_credentials(
-    hass: HomeAssistant, tmp_path: Path
+    hass: HomeAssistant,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     runtime_root = tmp_path / "runtime" / "current"
     _runtime_tree(runtime_root)
@@ -1356,7 +1369,9 @@ async def test_live_stream_recovers_after_helper_failure_with_fresh_credentials(
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            raise OwletHelperProcessError("Native stream helper failed")
+            raise OwletHelperProcessError(
+                "Native stream helper failed", code="stream_helper_failed"
+            )
         await kwargs["on_frame"](
             b"\x00\x00\x00\x01\x67sps\x00\x00\x01\x68pps\x00\x00\x00\x01\x65idr"
         )
@@ -1392,6 +1407,7 @@ async def test_live_stream_recovers_after_helper_failure_with_fresh_credentials(
     manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
     manager.snapshot.libraries_compatible = True
     manager.snapshot.status = "ready"
+    caplog.set_level("WARNING", logger="custom_components.owlet_cam.runtime.manager")
 
     await manager._async_stream_client_connected()
     async with asyncio.timeout(1):
@@ -1402,10 +1418,29 @@ async def test_live_stream_recovers_after_helper_failure_with_fresh_credentials(
     assert manager.snapshot.stream_reconnect_count == 1
     assert manager.snapshot.stream_healthy
     assert manager.snapshot.last_error_code is None
+    assert manager.snapshot.stream_last_interruption_code == "stream_helper_failed"
+    assert manager.snapshot.stream_last_interruption_at is not None
+    assert manager.snapshot.stream_last_recovery_at is not None
+    assert manager.snapshot.stream_session_count == 2
+    assert "stream_helper_failed" in caplog.text
+    diagnostics = manager.diagnostics()
+    assert diagnostics["stream"]["last_interruption_code"] == ("stream_helper_failed")
+    assert "pid" not in json.dumps(diagnostics).lower()
 
     await manager.async_stop_stream()
     assert manager.snapshot.stream_status == "idle"
     await manager.async_shutdown()
+
+
+def test_native_helper_arms_linux_parent_death_supervision() -> None:
+    """A Core crash must not leave a newly built native helper orphaned."""
+    source = (
+        Path(__file__).parents[1] / "helper" / "src" / "frame_probe.c"
+    ).read_text()
+
+    assert "PR_SET_PDEATHSIG" in source
+    assert "arm_parent_death_signal()" in source
+    assert 'emit_error("parent_supervision", -1)' in source
 
 
 async def test_frame_probe_cloud_failure_has_safe_error_state(

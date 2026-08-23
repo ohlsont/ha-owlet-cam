@@ -19,6 +19,10 @@ _MAX_STREAM_FRAME: Final = 4 * 1024 * 1024
 class OwletHelperProcessError(RuntimeError):
     """A redacted process lifecycle failure."""
 
+    def __init__(self, message: str, *, code: str = "helper_process_failed") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 @dataclass(frozen=True, slots=True)
 class HelperProcessResult:
@@ -34,11 +38,28 @@ class OwletHelperProcessRunner:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._process: asyncio.subprocess.Process | None = None
+        self._started_count = 0
+        self._reaped_count = 0
+        self._forced_kill_count = 0
+        self._current_reaped = True
+        self._last_exit_reason: str | None = None
 
     @property
     def running(self) -> bool:
         """Return process state without performing I/O."""
         return self._process is not None and self._process.returncode is None
+
+    def diagnostics(self) -> dict[str, bool | int | str | None]:
+        """Return cached, identifier-free child lifecycle facts."""
+        return {
+            "active": self.running,
+            "started_count": self._started_count,
+            "reaped_count": self._reaped_count,
+            "all_reaped": not self.running
+            and self._started_count == self._reaped_count,
+            "forced_kill_count": self._forced_kill_count,
+            "last_exit_reason": self._last_exit_reason,
+        }
 
     async def async_run(
         self,
@@ -70,6 +91,7 @@ class OwletHelperProcessRunner:
                     pass_fds=tuple(pass_fds),
                     start_new_session=True,
                 )
+                self._record_started()
                 process = self._process
                 if (
                     process.stdin is None
@@ -94,7 +116,9 @@ class OwletHelperProcessRunner:
                 except TimeoutError as err:
                     await self._async_terminate_process(process)
                     await _cancel_tasks(stdout_task, stderr_task)
-                    raise OwletHelperProcessError("Native helper timed out") from err
+                    raise OwletHelperProcessError(
+                        "Native helper timed out", code="helper_timeout"
+                    ) from err
                 except asyncio.CancelledError:
                     await self._async_terminate_process(process)
                     await _cancel_tasks(stdout_task, stderr_task)
@@ -111,6 +135,8 @@ class OwletHelperProcessRunner:
             finally:
                 if stdin is not None:
                     stdin[:] = b"\0" * len(stdin)
+                if self._process is not None:
+                    self._record_reaped(self._process)
                 self._process = None
 
     async def async_stream(
@@ -148,6 +174,7 @@ class OwletHelperProcessRunner:
                     },
                     start_new_session=True,
                 )
+                self._record_started()
                 process = self._process
                 if (
                     process.stdin is None
@@ -171,21 +198,25 @@ class OwletHelperProcessRunner:
                             size = int.from_bytes(header, "big")
                             if size < 1 or size > _MAX_STREAM_FRAME:
                                 raise OwletHelperProcessError(
-                                    "Native helper emitted an invalid media frame"
+                                    "Native helper emitted an invalid media frame",
+                                    code="stream_invalid_frame",
                                 )
                             frame = await process.stdout.readexactly(size)
                     except asyncio.IncompleteReadError:
                         break
                     except TimeoutError as err:
                         raise OwletHelperProcessError(
-                            "Native helper produced no media frames"
+                            "Native helper produced no media frames",
+                            code="stream_no_frames",
                         ) from err
                     await on_frame(frame)
 
                 returncode = await process.wait()
                 stderr = await stderr_task
                 if returncode != 0:
-                    raise OwletHelperProcessError("Native stream helper failed")
+                    raise OwletHelperProcessError(
+                        "Native stream helper failed", code="stream_helper_failed"
+                    )
                 return stderr
             except asyncio.CancelledError:
                 if self._process is not None:
@@ -202,6 +233,8 @@ class OwletHelperProcessRunner:
                 if stderr_task is not None and not stderr_task.done():
                     stderr_task.cancel()
                     await asyncio.gather(stderr_task, return_exceptions=True)
+                if self._process is not None:
+                    self._record_reaped(self._process)
                 self._process = None
 
     async def async_stop(self) -> None:
@@ -210,24 +243,48 @@ class OwletHelperProcessRunner:
         if process is not None and process.returncode is None:
             await self._async_terminate_process(process)
 
-    @staticmethod
-    async def _async_terminate_process(process: asyncio.subprocess.Process) -> None:
+    async def _async_terminate_process(
+        self, process: asyncio.subprocess.Process
+    ) -> None:
         if process.returncode is not None:
             return
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
+            await process.wait()
             return
         try:
             await asyncio.wait_for(process.wait(), timeout=_TERMINATE_TIMEOUT)
+            self._last_exit_reason = "terminated"
             return
         except TimeoutError:
             pass
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
+            await process.wait()
             return
+        self._forced_kill_count += 1
+        self._last_exit_reason = "killed"
         await process.wait()
+
+    def _record_started(self) -> None:
+        self._started_count += 1
+        self._current_reaped = False
+        self._last_exit_reason = None
+
+    def _record_reaped(self, process: asyncio.subprocess.Process) -> None:
+        if self._current_reaped or process.returncode is None:
+            return
+        self._current_reaped = True
+        self._reaped_count += 1
+        if self._last_exit_reason is None:
+            if process.returncode == 0:
+                self._last_exit_reason = "exited"
+            elif process.returncode < 0:
+                self._last_exit_reason = "signaled"
+            else:
+                self._last_exit_reason = "failed"
 
 
 async def _read_limited(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import platform
 import secrets
@@ -57,6 +58,8 @@ from .protocol import (
     parse_snapshot_capture_output,
 )
 from .stream import H264LoopbackServer
+
+_LOGGER = logging.getLogger(__name__)
 
 RUNTIME_LAYOUT_VERSION: Final = 1
 RUNTIME_MANIFEST: Final = "runtime-manifest.json"
@@ -181,6 +184,14 @@ class RuntimeSnapshot:
     stream_frames: int = 0
     stream_bytes: int = 0
     stream_reconnect_count: int = 0
+    stream_session_count: int = 0
+    stream_stop_count: int = 0
+    stream_last_started_at: datetime | None = None
+    stream_last_frame_at: datetime | None = None
+    stream_last_interruption_at: datetime | None = None
+    stream_last_interruption_code: str | None = None
+    stream_last_recovery_at: datetime | None = None
+    stream_last_stopped_at: datetime | None = None
 
 
 class OwletRuntimeManager:
@@ -638,6 +649,11 @@ class OwletRuntimeManager:
     async def async_stop_stream(self) -> None:
         """Stop the one native producer while leaving snapshots usable."""
         async with self._stream_lock:
+            had_stream = (
+                self._stream_task is not None
+                or self.snapshot.stream_active
+                or self._runner.running
+            )
             self._stream_requested = False
             self._cancel_idle_disconnect()
             task = self._stream_task
@@ -652,6 +668,9 @@ class OwletRuntimeManager:
         self.snapshot.stream_active = False
         self.snapshot.stream_healthy = False
         self.snapshot.stream_status = "idle"
+        if had_stream:
+            self.snapshot.stream_stop_count += 1
+            self.snapshot.stream_last_stopped_at = datetime.now(UTC)
         self._notify_listeners()
 
     async def _async_stream_client_connected(self) -> None:
@@ -722,6 +741,8 @@ class OwletRuntimeManager:
                 command, environment = self._helper_invocation(
                     prepared, "stream_capture"
                 )
+                self.snapshot.stream_session_count += 1
+                self.snapshot.stream_last_started_at = datetime.now(UTC)
                 self.snapshot.stream_active = True
                 self._notify_listeners()
                 await self._runner.async_stream(
@@ -740,9 +761,11 @@ class OwletRuntimeManager:
             except asyncio.CancelledError:
                 raise
             except OwletCamError as err:
-                self.snapshot.last_error_code = _cloud_error_code(err)
-            except (OwletHelperProcessError, OwletRuntimeError):
-                self.snapshot.last_error_code = "stream_recovery_failed"
+                self._record_stream_interruption(_cloud_error_code(err))
+            except OwletHelperProcessError as err:
+                self._record_stream_interruption(err.code)
+            except OwletRuntimeError as err:
+                self._record_stream_interruption(err.code)
             finally:
                 self.snapshot.stream_active = False
                 self.snapshot.stream_healthy = False
@@ -765,14 +788,36 @@ class OwletRuntimeManager:
     async def _async_publish_stream_frame(self, frame: bytes) -> None:
         was_healthy = self.snapshot.stream_healthy
         await self._stream_server.async_publish(frame)
+        now = datetime.now(UTC)
         self.snapshot.stream_frames += 1
         self.snapshot.stream_bytes += len(frame)
+        self.snapshot.stream_last_frame_at = now
         self.snapshot.stream_healthy = self._stream_server.healthy
         if self.snapshot.stream_healthy:
             self.snapshot.stream_status = "streaming"
             self.snapshot.last_error_code = None
+            interrupted_at = self.snapshot.stream_last_interruption_at
+            recovered_at = self.snapshot.stream_last_recovery_at
+            if interrupted_at is not None and (
+                recovered_at is None or recovered_at < interrupted_at
+            ):
+                self.snapshot.stream_last_recovery_at = now
+                _LOGGER.info("Owlet Cam stream recovered after a safe interruption")
         if self.snapshot.stream_healthy != was_healthy:
             self._notify_listeners()
+
+    def _record_stream_interruption(self, code: str) -> None:
+        """Cache and log one redacted recovery reason when viewing should continue."""
+        if not self._stream_requested or self._shutdown:
+            return
+        now = datetime.now(UTC)
+        self.snapshot.last_error_code = code
+        self.snapshot.stream_last_interruption_at = now
+        self.snapshot.stream_last_interruption_code = code
+        _LOGGER.warning(
+            "Owlet Cam stream interrupted; bounded recovery scheduled (code: %s)",
+            code,
+        )
 
     def _cancel_idle_disconnect(self) -> None:
         task = self._idle_disconnect_task
@@ -815,6 +860,16 @@ class OwletRuntimeManager:
     def diagnostics(self) -> dict[str, Any]:
         """Return safe cached facts without filesystem or network I/O."""
         probe = self.snapshot.last_frame_probe
+        process_diagnostics = self._runner.diagnostics()
+        if not isinstance(process_diagnostics, dict):
+            process_diagnostics = {
+                "active": None,
+                "started_count": None,
+                "reaped_count": None,
+                "all_reaped": None,
+                "forced_kill_count": None,
+                "last_exit_reason": None,
+            }
         return {
             "status": self.snapshot.status,
             "helper_version": self.snapshot.helper_version,
@@ -855,9 +910,28 @@ class OwletRuntimeManager:
                 "frames": self.snapshot.stream_frames,
                 "bytes": self.snapshot.stream_bytes,
                 "reconnect_count": self.snapshot.stream_reconnect_count,
+                "session_count": self.snapshot.stream_session_count,
+                "stop_count": self.snapshot.stream_stop_count,
+                "last_started_at": _optional_isoformat(
+                    self.snapshot.stream_last_started_at
+                ),
+                "last_frame_at": _optional_isoformat(
+                    self.snapshot.stream_last_frame_at
+                ),
+                "last_interruption_at": _optional_isoformat(
+                    self.snapshot.stream_last_interruption_at
+                ),
+                "last_interruption_code": (self.snapshot.stream_last_interruption_code),
+                "last_recovery_at": _optional_isoformat(
+                    self.snapshot.stream_last_recovery_at
+                ),
+                "last_stopped_at": _optional_isoformat(
+                    self.snapshot.stream_last_stopped_at
+                ),
                 "consumers": self._stream_server.client_count,
                 "binding": "127.0.0.1" if self._stream_server.url else None,
             },
+            "helper_process": process_diagnostics,
         }
 
     def _prepare_sync(self) -> tuple[PreparedRuntime, bytearray]:
@@ -956,6 +1030,11 @@ def _cloud_error_code(error: OwletCamError) -> str:
     if isinstance(error, OwletConnectionError):
         return "cloud_connection_failed"
     return "cloud_request_failed"
+
+
+def _optional_isoformat(value: datetime | None) -> str | None:
+    """Serialize one cached timestamp without adding identifying data."""
+    return value.isoformat() if value is not None else None
 
 
 def _prepare_directories(root: Path) -> None:

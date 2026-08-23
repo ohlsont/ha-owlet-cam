@@ -23,6 +23,9 @@ extern int dlclose(void *handle);
 extern ssize_t read(int fd, void *buffer, size_t count);
 extern ssize_t write(int fd, const void *buffer, size_t count);
 extern int clock_gettime(int clock_id, struct timespec *value);
+extern int getppid(void);
+extern int prctl(int option, unsigned long arg2, unsigned long arg3,
+                 unsigned long arg4, unsigned long arg5);
 extern int usleep(unsigned int microseconds);
 extern void _exit(int status) __attribute__((noreturn));
 typedef void (*signal_handler_fn)(int);
@@ -43,6 +46,7 @@ extern signal_handler_fn signal(int signal_number, signal_handler_fn handler);
 #define AV_ER_INCOMPLETE_FRAME -20013
 #define SIGTERM 15
 #define SIGINT 2
+#define PR_SET_PDEATHSIG 1
 #ifdef STREAM_CAPTURE
 #define EVENT_NAME "stream_capture"
 #define CONTROL_FD 2
@@ -156,6 +160,13 @@ static void request_stop(int signal_number) {
     stop_requested = 1;
 }
 #endif
+
+static int arm_parent_death_signal(void) {
+    int parent = getppid();
+    if (parent <= 1) return 0;
+    if (prctl(PR_SET_PDEATHSIG, SIGTERM, 0, 0, 0) < 0) return 0;
+    return getppid() == parent;
+}
 
 static size_t text_length(const char *value) {
     size_t length = 0;
@@ -775,6 +786,14 @@ static int run_probe(void) {
     int native_code = 0;
     unsigned long started_ms = monotonic_ms();
     unsigned long first_frame_started_ms = 0;
+#ifdef STREAM_CAPTURE
+    signal(SIGTERM, request_stop);
+    signal(SIGINT, request_stop);
+#endif
+    if (!arm_parent_death_signal()) {
+        emit_error("parent_supervision", -1);
+        return 1;
+    }
     zero_bytes(&values, sizeof(values));
     zero_bytes(&api, sizeof(api));
     zero_bytes(&stats, sizeof(stats));
@@ -786,10 +805,6 @@ static int run_probe(void) {
         emit_error("invalid_input", -1);
         goto cleanup;
     }
-#ifdef STREAM_CAPTURE
-    signal(SIGTERM, request_stop);
-    signal(SIGINT, request_stop);
-#endif
     if (!load_api(&api, &global_handle, &iotc_handle, &av_handle)) {
         emit_error("library_symbols", -1);
         goto cleanup;

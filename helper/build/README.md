@@ -32,7 +32,9 @@ For Milestone 6 the source is also compiled with `STREAM_CAPTURE`. That helper
 keeps the single TUTK session open, writes each Annex-B access unit to stdout as
 a four-byte big-endian length followed by media bytes, and reserves stderr for
 one bounded, redacted lifecycle event. SIGTERM and SIGINT request native AV/IOTC
-teardown before exit. The Home Assistant process never loads the libraries.
+teardown before exit. Every helper mode requests Linux parent-death termination
+before reading secrets and rejects launch when it has already lost its Home
+Assistant parent. The Home Assistant process never loads the libraries.
 
 `scripts/build_arm64_helper_in_container.sh` performs the complete reproducible
 ARM64 build inside the pinned Debian image. It downloads the AOSP APEX only from

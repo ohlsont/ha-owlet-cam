@@ -16,6 +16,10 @@ This independent project is not affiliated with Owlet or ThroughTek.
   arguments or environment variables to helper processes.
 - Downloaded open-source helper assets will be version-pinned and SHA-256
   verified before atomic installation.
+- Helper processes run in their own process group, are synchronously reaped on
+  stop, and request Linux parent-death termination before reading secrets.
+  Diagnostics expose only aggregate lifecycle facts and fixed safe error codes;
+  they never expose PIDs, executable paths, media URLs or credentials.
 
 No certificate authority, traffic interception, privileged container access,
 Docker socket, AppArmor relaxation, host PID/IPC access, or LAN listener is part

@@ -4,7 +4,7 @@ Owlet Cam is a clean-room Home Assistant custom integration intended to expose
 Owlet cameras as native camera and room-sensor entities. It is not affiliated
 with, endorsed by, or supported by Owlet or ThroughTek.
 
-## Current status: bounded Yellow live video works; Milestone 6 remains partial
+## Current status: Milestone 6 accepted with documented validation waivers
 
 Version `0.2.0` implements clean-room, asynchronous Owlet cloud authentication
 and camera KMS validation. Embedded Experimental setup can validate a European
@@ -136,9 +136,11 @@ idle, zero Owlet/stream system-log entries and zero Repairs. A later shortened
 continuous-view test ran for 7 minutes 44.65 seconds, advanced the aggregate
 counter by 6,878 frames, and returned normally to idle with zero consumers,
 zero reconnects, no matching Owlet system-log entry and no active Repair. This
-is practical bounded evidence, not a two-hour soak. The full gate is not passed
-because the formal two-hour and overnight soaks, companion-app, outage and
-physical tests remain unperformed.
+is practical bounded evidence, not a two-hour soak. On 2026-08-23 the user
+explicitly waived the formal two-hour/overnight, Companion-app, Dream
+coexistence, physical-outage and additional Yellow-reboot checks. Milestone 6
+is accepted under that revised validation scope; those checks remain listed as
+unperformed and are not implied to have passed.
 
 ## Planned runtime modes
 
@@ -197,10 +199,10 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
 
 - The embedded camera's snapshot path and bounded continuous Home Assistant
   stream path have displayed real media on Yellow. The loopback source is
-  timestamped MPEG-TS carrying copied H.264, not RTSP. The full live-stream gate
-  is incomplete because the formal two-hour/overnight, companion-app, outage
-  and physical tests remain unperformed. Active-viewer reload, settled reload
-  and Core-restart
+  timestamped MPEG-TS carrying copied H.264, not RTSP. Milestone 6 is accepted
+  under a user-approved reduced validation scope; formal two-hour/overnight,
+  Companion-app, Dream-coexistence and physical-outage checks were waived and
+  remain unperformed. Active-viewer reload, settled reload and Core-restart
   recovery are automatic after the first explicit native validation.
 - Cloud/KMS behavior has comprehensive sanitized fixture coverage and succeeded
   inside Home Assistant Core on Yellow. Wrong-password reauthentication and the
@@ -229,6 +231,13 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   found during idle-to-new-session testing was corrected; the repeated
   restart, live, idle and live sequence ended with zero matching system-log
   entries and zero Repairs.
+- Stream diagnostics retain redacted session, stop, reconnect, last-frame,
+  interruption and recovery timestamps/codes. Unexpected interruptions emit a
+  fixed safe-code warning so an unattended outage leaves evidence even after
+  recovery. Helper diagnostics expose only active/started/reaped/all-reaped and
+  forced-kill facts; they never expose a PID, executable path or secret. The
+  ARM64 helper also requests Linux parent-death termination so a Core crash
+  cannot normally leave the native camera process running.
 - The local brand art has not been submitted to Home Assistant Brands, so
   validation that requires the public Brands repository may remain pending.
 - The documentation and issue URLs assume future publication at

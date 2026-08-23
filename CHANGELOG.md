@@ -128,8 +128,8 @@ All notable changes are documented here. Versions follow semantic versioning.
   connection-refused system-log entry, and displayed fresh real video after the
   retained dialog was closed and reopened. Idle teardown subsequently passed.
   Direct Core-namespace FFprobe, two-hour/overnight soaks, companion app and
-  physical outage tests remain unperformed; the full Milestone 6 gate is
-  therefore incomplete.
+  physical outage tests remained unperformed at this point; the later revised
+  acceptance decision is recorded below.
 - Current automated validation: 163 tests passed at 86.53% branch-aware
   coverage; Ruff and mypy passed. Two independent ARM64 helper builds produced
   the same proprietary-free archive.
@@ -146,12 +146,25 @@ All notable changes are documented here. Versions follow semantic versioning.
   the loopback URL stable. After restart, live → idle → live displayed real
   video, reached final idle with zero consumers/reconnects, and produced zero
   matching system-log entries or Repairs.
-- Current automated validation: 189 tests passed at 85.86% branch-aware
+- Current automated validation: 190 tests passed at 86.06% branch-aware
   coverage; Ruff, mypy, secret scan and release validation passed.
 - Recorded a shortened Yellow continuous-view test: 7 minutes 44.65 seconds,
   6,878 additional aggregate frames, zero reconnects, normal idle teardown,
   zero matching Owlet system-log entries and zero active Repairs. The formal
   two-hour and overnight soaks remain explicitly unperformed.
+- Added redacted stream interruption/recovery timestamps and safe error codes,
+  session/stop counters, and helper started/reaped/all-reaped/forced-kill
+  diagnostics. Unexpected interruptions now leave a fixed-code warning without
+  exposing secrets. The freestanding ARM64 helper requests Linux parent-death
+  termination before reading credentials.
+- Rebuilt and checksum-verified the proprietary-free ARM64 helper on Yellow.
+  Automatic native validation reached `ready`; a real bounded stream delivered
+  863 frames with zero reconnects and then stopped with started 2/reaped 2, all
+  reaped, zero forced kills, zero current Owlet system-log entries and zero
+  active Repairs.
+- Milestone 6 is accepted under the user's revised validation scope. Formal
+  two-hour/overnight, Companion-app, Dream-coexistence, physical-outage and
+  additional reboot tests were explicitly waived and remain unperformed.
 
 ## [0.2.0] - Unreleased
 
