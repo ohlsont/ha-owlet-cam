@@ -13,7 +13,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import urlsplit
 
 import pytest
@@ -1225,6 +1225,121 @@ async def test_live_stream_requires_the_versioned_stream_helper(
     assert caught.value.code == "stream_runtime_missing"
     await manager.async_shutdown()
     assert not list((tmp_path / "userfiles" / "tmp").glob("snapshot-*.h264"))
+
+
+async def test_core_stream_probe_uses_bounded_secret_free_ffprobe(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    runner = AsyncMock(spec=OwletHelperProcessRunner)
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+        runner=runner,
+    )
+    manager._prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.6.0-test", architecture="aarch64", root=tmp_path
+        ),
+        library_directory=tmp_path,
+        libraries=(),
+        source_sha256="0" * 64,
+        stream_helper_available=True,
+    )
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+    manager.snapshot.status = "ready"
+    source = "http://127.0.0.1:43210/owlet-cam.ts"
+    process = MagicMock()
+    process.returncode = 0
+
+    async def communicate() -> tuple[bytes, bytes]:
+        manager.snapshot.stream_frames += 112
+        manager.snapshot.stream_bytes += 750_000
+        return (
+            json.dumps(
+                {
+                    "streams": [
+                        {
+                            "codec_name": "h264",
+                            "profile": "High",
+                            "level": 40,
+                            "width": 1920,
+                            "height": 1080,
+                            "avg_frame_rate": "14/1",
+                            "nb_read_frames": "112",
+                        }
+                    ],
+                    "format": {"format_name": "mpegts"},
+                }
+            ).encode(),
+            b"",
+        )
+
+    process.communicate = AsyncMock(side_effect=communicate)
+    process.wait = AsyncMock()
+    manager.async_get_stream_source = AsyncMock(return_value=source)  # type: ignore[method-assign]
+
+    with (
+        patch(
+            "custom_components.owlet_cam.runtime.manager.get_ffmpeg_manager",
+            return_value=SimpleNamespace(binary="/usr/bin/ffmpeg"),
+        ),
+        patch(
+            "custom_components.owlet_cam.runtime.manager.asyncio.create_subprocess_exec",
+            new=AsyncMock(return_value=process),
+        ) as create_process,
+    ):
+        result = await manager.async_run_stream_probe()
+
+    assert result.codec == "h264"
+    assert result.profile == "High"
+    assert result.bitrate_kbps > 0
+    assert manager.snapshot.last_stream_probe == result
+    assert manager.snapshot.last_stream_probe_at is not None
+    assert manager.snapshot.status == "ready"
+    command = create_process.await_args.args
+    assert command[0] == "/usr/bin/ffprobe"
+    assert source in command
+    serialized = repr(create_process.await_args)
+    for secret in ("fixture-uid", "fixture-auth-key", manager._sdk_key.decode()):
+        assert secret not in serialized
+    runner.async_stop.assert_awaited_once()
+
+
+async def test_stream_probe_status_does_not_reject_its_first_consumer(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    runner = AsyncMock(spec=OwletHelperProcessRunner)
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+        runner=runner,
+    )
+    manager._prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.6.0-test", architecture="aarch64", root=tmp_path
+        ),
+        library_directory=tmp_path,
+        libraries=(),
+        source_sha256="0" * 64,
+        stream_helper_available=True,
+    )
+    manager._sdk_key = bytearray(b"AQ" + b"x" * 40)
+    manager.snapshot.libraries_compatible = True
+    manager.snapshot.status = "stream_probe_running"
+    manager._async_stream_loop = AsyncMock()  # type: ignore[method-assign]
+
+    assert not manager.stream_available
+    await manager._async_stream_client_connected()
+    await asyncio.sleep(0)
+
+    manager._async_stream_loop.assert_awaited_once()
+    assert not manager._stream_server.healthy
+    await manager.async_stop_stream()
 
 
 async def test_live_stream_recovers_after_helper_failure_with_fresh_credentials(

@@ -22,6 +22,12 @@ _FRAME_PROBE = ButtonEntityDescription(
     entity_category=EntityCategory.DIAGNOSTIC,
     entity_registry_enabled_default=False,
 )
+_STREAM_PROBE = ButtonEntityDescription(
+    key="run_stream_probe",
+    translation_key="run_stream_probe",
+    entity_category=EntityCategory.DIAGNOSTIC,
+    entity_registry_enabled_default=False,
+)
 
 
 async def async_setup_entry(
@@ -37,6 +43,7 @@ async def async_setup_entry(
         [
             OwletCamRuntimeProbeButton(entry, description=_RUNTIME_PROBE),
             OwletCamRuntimeProbeButton(entry, description=_FRAME_PROBE),
+            OwletCamRuntimeProbeButton(entry, description=_STREAM_PROBE),
         ]
     )
 
@@ -66,6 +73,8 @@ class OwletCamRuntimeProbeButton(OwletCamRuntimeEntity, ButtonEntity):
     @property
     def available(self) -> bool:
         """Enforce architecture and previous-gate requirements."""
+        if self.entity_description.key == _STREAM_PROBE.key:
+            return self.runtime_manager.stream_available
         if self.entity_description.key == _FRAME_PROBE.key:
             return self.runtime_manager.frame_probe_available
         return self.runtime_manager.supported_architecture
@@ -73,7 +82,9 @@ class OwletCamRuntimeProbeButton(OwletCamRuntimeEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Run the selected probe without blocking Home Assistant's event loop."""
         try:
-            if self.entity_description.key == _FRAME_PROBE.key:
+            if self.entity_description.key == _STREAM_PROBE.key:
+                await self.runtime_manager.async_run_stream_probe()
+            elif self.entity_description.key == _FRAME_PROBE.key:
                 await self.runtime_manager.async_run_frame_probe()
             else:
                 await self.runtime_manager.async_prepare_and_probe_libraries()

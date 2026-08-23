@@ -11,12 +11,14 @@ import secrets
 import shutil
 import stat
 import tempfile
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
+from homeassistant.components.ffmpeg import get_ffmpeg_manager
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, Event, HomeAssistant, callback
 
@@ -36,6 +38,13 @@ from .apk import (
     extract_owlet_application,
 )
 from .elf import ElfInspectionError, inspect_elf
+from .media_probe import (
+    MediaProbeError,
+    MediaProbeResult,
+    ffprobe_binary,
+    ffprobe_failure_code,
+    parse_media_probe_output,
+)
 from .process import OwletHelperProcessError, OwletHelperProcessRunner
 from .protocol import (
     MAX_SNAPSHOT_CAPTURE,
@@ -60,6 +69,9 @@ _VALIDATION_MARKER_CONTENT: Final = (
 _FRAME_PROBE_TIMEOUT: Final = 75.0
 _LIBRARY_PROBE_TIMEOUT: Final = 30.0
 _SNAPSHOT_CAPTURE_TIMEOUT: Final = 30.0
+_STREAM_PROBE_SECONDS: Final = 8.0
+_STREAM_PROBE_TIMEOUT: Final = 20.0
+_STREAM_PROBE_TERMINATE_TIMEOUT: Final = 2.0
 _MAX_RECONNECT_BACKOFF: Final = 300.0
 _PROCESS_SESSION: Final = secrets.token_hex(8)
 _REQUIRED_RUNTIME_FILES: Final = frozenset(
@@ -161,10 +173,13 @@ class RuntimeSnapshot:
     last_snapshot_at: datetime | None = None
     last_snapshot_width: int | None = None
     last_snapshot_height: int | None = None
+    last_stream_probe_at: datetime | None = None
+    last_stream_probe: MediaProbeResult | None = None
     stream_status: str = "idle"
     stream_healthy: bool = False
     stream_active: bool = False
     stream_frames: int = 0
+    stream_bytes: int = 0
     stream_reconnect_count: int = 0
 
 
@@ -191,6 +206,7 @@ class OwletRuntimeManager:
         self._runner = runner or OwletHelperProcessRunner()
         self._lock = asyncio.Lock()
         self._stream_lock = asyncio.Lock()
+        self._media_probe_lock = asyncio.Lock()
         self._listeners: set[Callable[[], None]] = set()
         self._prepared: PreparedRuntime | None = None
         self._sdk_key: bytearray | None = None
@@ -203,6 +219,7 @@ class OwletRuntimeManager:
         self._stream_task: asyncio.Task[None] | None = None
         self._idle_disconnect_task: asyncio.Task[None] | None = None
         self._restore_task: asyncio.Task[None] | None = None
+        self._media_probe_process: asyncio.subprocess.Process | None = None
         self._stream_server = H264LoopbackServer(
             on_first_client=self._async_stream_client_connected,
             on_last_client=self._async_stream_client_disconnected,
@@ -227,9 +244,13 @@ class OwletRuntimeManager:
     @property
     def stream_available(self) -> bool:
         """Return the cached continuous-stream capability gate."""
+        return self._stream_runtime_configured and self.snapshot.status == "ready"
+
+    @property
+    def _stream_runtime_configured(self) -> bool:
+        """Return whether the validated native stream pieces are present."""
         return (
-            self.snapshot_available
-            and self.snapshot.status == "ready"
+            self.frame_probe_available
             and self._prepared is not None
             and self._prepared.stream_helper_available
         )
@@ -490,6 +511,84 @@ class OwletRuntimeManager:
             )
         return await self._stream_server.async_start()
 
+    async def async_run_stream_probe(self) -> MediaProbeResult:
+        """Inspect bounded real media from inside Home Assistant Core."""
+        async with self._media_probe_lock:
+            self._raise_if_stopped()
+            if not self.stream_available:
+                raise OwletRuntimeError(
+                    "stream_runtime_missing", "The live stream helper is unavailable"
+                )
+            had_consumers = self._stream_server.client_count > 0
+            source = await self.async_get_stream_source()
+            started = time.monotonic()
+            frames_before = self.snapshot.stream_frames
+            bytes_before = self.snapshot.stream_bytes
+            self._set_status("stream_probe_running")
+            process: asyncio.subprocess.Process | None = None
+            failure_code = "stream_probe_failed"
+            try:
+                binary = ffprobe_binary(get_ffmpeg_manager(self._hass).binary)
+                process = await asyncio.create_subprocess_exec(
+                    binary,
+                    "-v",
+                    "error",
+                    "-rw_timeout",
+                    str(int(_STREAM_PROBE_TIMEOUT * 1_000_000)),
+                    "-select_streams",
+                    "v:0",
+                    "-count_frames",
+                    "-read_intervals",
+                    f"%+{_STREAM_PROBE_SECONDS:g}",
+                    "-show_entries",
+                    (
+                        "stream=codec_name,profile,level,width,height,"
+                        "avg_frame_rate,nb_read_frames:format=format_name"
+                    ),
+                    "-of",
+                    "json",
+                    source,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                self._media_probe_process = process
+                try:
+                    async with asyncio.timeout(_STREAM_PROBE_TIMEOUT):
+                        stdout, _stderr = await process.communicate()
+                except TimeoutError:
+                    await self._async_stop_media_probe()
+                    raise
+                elapsed = max(time.monotonic() - started, 0.001)
+                if process.returncode != 0:
+                    failure_code = ffprobe_failure_code(_stderr)
+                    raise MediaProbeError("FFprobe could not inspect the live stream")
+                probe = parse_media_probe_output(
+                    stdout,
+                    observed_frames=self.snapshot.stream_frames - frames_before,
+                    observed_bytes=self.snapshot.stream_bytes - bytes_before,
+                    observed_seconds=elapsed,
+                )
+                self._raise_if_stopped()
+                self.snapshot.last_stream_probe = probe
+                self.snapshot.last_stream_probe_at = datetime.now(UTC)
+                self.snapshot.last_error_code = None
+                self._set_status("ready")
+                return probe
+            except (MediaProbeError, OSError, TimeoutError, ValueError) as err:
+                self._raise_if_stopped()
+                self._record_error(failure_code)
+                raise OwletRuntimeError(
+                    failure_code, "The Core-local stream probe failed"
+                ) from err
+            finally:
+                if self._media_probe_process is process:
+                    self._media_probe_process = None
+                if not had_consumers:
+                    await asyncio.sleep(0)
+                    if self._stream_server.client_count == 0:
+                        await self.async_stop_stream()
+
     def async_schedule_previous_validation_restore(self) -> None:
         """Restore a runtime only after an earlier explicit probe consented."""
         if self._restore_task is not None or self._shutdown:
@@ -559,13 +658,17 @@ class OwletRuntimeManager:
         """Start one producer for the first loopback consumer."""
         async with self._stream_lock:
             self._raise_if_stopped()
-            if not self.stream_available:
+            if not self._stream_runtime_configured:
                 raise OwletRuntimeError(
                     "stream_runtime_missing", "The live stream helper is unavailable"
                 )
             self._cancel_idle_disconnect()
             self._stream_requested = True
             if self._stream_task is None or self._stream_task.done():
+                # The listener survives idle disconnects so Home Assistant keeps
+                # one stable source URL. Cached media and its timestamp origin
+                # must not survive into the next native camera session.
+                self._stream_server.reset_media()
                 self._stream_task = self._hass.async_create_background_task(
                     self._async_stream_loop(),
                     "Owlet Cam H.264 producer",
@@ -663,6 +766,7 @@ class OwletRuntimeManager:
         was_healthy = self.snapshot.stream_healthy
         await self._stream_server.async_publish(frame)
         self.snapshot.stream_frames += 1
+        self.snapshot.stream_bytes += len(frame)
         self.snapshot.stream_healthy = self._stream_server.healthy
         if self.snapshot.stream_healthy:
             self.snapshot.stream_status = "streaming"
@@ -676,9 +780,23 @@ class OwletRuntimeManager:
             task.cancel()
         self._idle_disconnect_task = None
 
+    async def _async_stop_media_probe(self) -> None:
+        """Terminate one bounded FFprobe process owned by this entry."""
+        process = self._media_probe_process
+        if process is None or process.returncode is not None:
+            return
+        process.terminate()
+        try:
+            async with asyncio.timeout(_STREAM_PROBE_TERMINATE_TIMEOUT):
+                await process.wait()
+        except TimeoutError:
+            process.kill()
+            await process.wait()
+
     async def async_shutdown(self) -> None:
         """Stop children, scrub SDK material, and release runtime state."""
         self._shutdown = True
+        await self._async_stop_media_probe()
         await self.async_stop_stream()
         restore_task = self._restore_task
         if restore_task is not None and restore_task is not asyncio.current_task():
@@ -720,11 +838,22 @@ class OwletRuntimeManager:
                 and self.snapshot.last_snapshot_height is not None
                 else None
             ),
+            "last_stream_probe_at": (
+                self.snapshot.last_stream_probe_at.isoformat()
+                if self.snapshot.last_stream_probe_at is not None
+                else None
+            ),
+            "last_stream_probe": (
+                asdict(self.snapshot.last_stream_probe)
+                if self.snapshot.last_stream_probe is not None
+                else None
+            ),
             "stream": {
                 "status": self.snapshot.stream_status,
                 "active": self.snapshot.stream_active,
                 "healthy": self.snapshot.stream_healthy,
                 "frames": self.snapshot.stream_frames,
+                "bytes": self.snapshot.stream_bytes,
                 "reconnect_count": self.snapshot.stream_reconnect_count,
                 "consumers": self._stream_server.client_count,
                 "binding": "127.0.0.1" if self._stream_server.url else None,

@@ -6,7 +6,9 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
+    SensorStateClass,
 )
+from homeassistant.const import UnitOfDataRate
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -56,6 +58,12 @@ _RUNTIME_DESCRIPTIONS = (
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     SensorEntityDescription(
+        key="last_stream_probe",
+        translation_key="last_stream_probe",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
         key="detected_resolution",
         translation_key="detected_resolution",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -64,6 +72,23 @@ _RUNTIME_DESCRIPTIONS = (
         key="detected_fps",
         translation_key="detected_fps",
         native_unit_of_measurement="fps",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="stream_codec",
+        translation_key="stream_codec",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="stream_profile",
+        translation_key="stream_profile",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="stream_bitrate",
+        translation_key="stream_bitrate",
+        native_unit_of_measurement=UnitOfDataRate.KILOBITS_PER_SECOND,
+        state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
 )
@@ -172,7 +197,8 @@ class OwletCamRuntimeSensor(OwletCamRuntimeEntity, SensorEntity):
     def native_value(self) -> str | float | datetime | None:
         """Return only manager-cached state."""
         snapshot = self.runtime_manager.snapshot
-        probe = snapshot.last_frame_probe
+        frame_probe = snapshot.last_frame_probe
+        stream_probe = snapshot.last_stream_probe
         match self.entity_description.key:
             case "runtime_status":
                 return snapshot.status
@@ -182,8 +208,19 @@ class OwletCamRuntimeSensor(OwletCamRuntimeEntity, SensorEntity):
                 return snapshot.detected_apk_version
             case "last_frame_probe":
                 return snapshot.last_frame_probe_at
+            case "last_stream_probe":
+                return snapshot.last_stream_probe_at
             case "detected_resolution":
+                probe = stream_probe or frame_probe
                 return f"{probe.width}x{probe.height}" if probe is not None else None
             case "detected_fps":
-                return probe.estimated_fps if probe is not None else None
+                if stream_probe is not None:
+                    return stream_probe.fps
+                return frame_probe.estimated_fps if frame_probe is not None else None
+            case "stream_codec":
+                return stream_probe.codec if stream_probe is not None else None
+            case "stream_profile":
+                return stream_probe.profile if stream_probe is not None else None
+            case "stream_bitrate":
+                return stream_probe.bitrate_kbps if stream_probe is not None else None
         return None

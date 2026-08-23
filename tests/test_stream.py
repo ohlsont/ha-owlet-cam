@@ -41,6 +41,33 @@ def test_mpeg_ts_muxer_emits_tables_timestamped_video_and_fixed_packets() -> Non
     assert _pmt_section()[-4:] == bytes.fromhex("15bd4d56")
 
 
+async def test_loopback_server_discards_old_gop_before_a_new_producer(
+    socket_enabled: None,
+) -> None:
+    server = H264LoopbackServer(
+        on_first_client=_noop,
+        on_last_client=_noop,
+    )
+    url = await server.async_start()
+    await server.async_publish(SPS + PPS + IDR)
+    assert server.healthy
+
+    server.reset_media()
+
+    assert not server.healthy
+    reader, writer = await _open_stream(url)
+    assert b"200 OK" in await reader.readuntil(b"\r\n\r\n")
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.01):
+            await reader.readexactly(188)
+
+    await server.async_publish(SPS + PPS + IDR)
+    _assert_transport_stream(await reader.readexactly(3 * 188))
+    writer.close()
+    await writer.wait_closed()
+    await server.async_stop()
+
+
 async def test_loopback_server_fans_out_one_gated_producer(
     socket_enabled: None,
 ) -> None:

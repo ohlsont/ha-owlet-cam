@@ -112,7 +112,7 @@ Assistant reported missing DTS; it was replaced before acceptance testing.
 The corrected source displayed changing real infrared room frames in Home
 Assistant for two simultaneous authenticated viewers. Reopening after idle
 worked, standard `camera.snapshot` produced a valid JPEG, and
-`camera.record` produced a playable five-second MP4. Live diagnostics observed
+`camera.record` produced playable bounded MP4 files. Live diagnostics observed
 one producer, two consumers, healthy media and zero reconnects; after the
 viewers closed, diagnostics reached idle with zero consumers. Automatic runtime
 revalidation now restores `ready` after a settled config-entry reload and after
@@ -122,11 +122,19 @@ before the integration tears down its loopback source, and loopback shutdown
 does not wait indefinitely for a retained consumer connection. On Yellow a
 reload with the live camera dialog open returned in 4.318 seconds, the entry was
 already `loaded` at the first follow-up check, and no Owlet, demuxing or
-connection-refused system-log entry appeared. Closing and reopening the dialog
-after entity recreation displayed fresh real video; the already-open dialog did
-not automatically subscribe to the replacement entity. The full gate is not
-passed because direct Core-namespace FFprobe, extended soaks, companion-app,
-outage and physical tests remain unperformed.
+connection-refused system-log entry appeared.
+
+A later Core-local FFprobe gate inspected the real loopback source from inside
+Home Assistant: H.264 Baseline level 4.0, 1920×1080, 15 FPS, 708.3 kbit/s and
+124 counted frames in MPEG-TS. The same active-viewer reload then recovered the
+already-open Home Assistant camera surface automatically. A clean-log follow-up
+found and corrected one idle-to-new-session timestamp discontinuity by clearing
+the old GOP and timestamp origin before a new native producer. After a Core
+restart, two separate real live sessions with a complete idle disconnect between
+them reached 4,201 aggregate frames, zero reconnects, zero consumers at final
+idle, zero Owlet/stream system-log entries and zero Repairs. The full gate is not
+passed because extended soaks, companion-app, outage and physical tests remain
+unperformed.
 
 ## Planned runtime modes
 
@@ -188,9 +196,7 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   timestamped MPEG-TS carrying copied H.264, not RTSP. The full live-stream gate
   is incomplete because long-duration, companion-app, outage and physical tests
   remain unperformed. Active-viewer reload, settled reload and Core-restart
-  recovery are automatic after the first explicit native validation. A camera
-  dialog already open across entity recreation must be closed and reopened to
-  subscribe to the replacement entity.
+  recovery are automatic after the first explicit native validation.
 - Cloud/KMS behavior has comprehensive sanitized fixture coverage and succeeded
   inside Home Assistant Core on Yellow. Wrong-password reauthentication and the
   complete Milestone 1 acceptance sequence remain unperformed.
@@ -210,13 +216,14 @@ release checks exclude. See [SECURITY.md](SECURITY.md).
   gate but is not snapshot or continuous-stream evidence, and it does not claim
   Dream itself remained uninterrupted during the helper probe.
 - The bounded Milestone 6 run showed changing real frames in two Home Assistant
-  clients, a valid service snapshot, a playable five-second service recording,
-  one producer with two consumers, zero reconnects, and a later idle state with
-  zero consumers. Exact live codec profile, bitrate and a direct Core-namespace
-  FFprobe capture were not recorded. Automatic post-restart and settled-reload
-  runtime recovery passed on Yellow. A later active-viewer reload completed in
-  4.318 seconds with no new Owlet or stale-source error; closing and reopening
-  the retained dialog restored real video from the replacement entity.
+  clients, valid service snapshots, playable service recordings, one producer
+  with two consumers, zero reconnects, and later idle states with zero
+  consumers. Core-local FFprobe recorded H.264 Baseline level 4.0, 1920×1080,
+  15 FPS, 708.3 kbit/s and MPEG-TS. Automatic post-restart, settled-reload and
+  active-viewer reload recovery passed on Yellow. A timestamp discontinuity
+  found during idle-to-new-session testing was corrected; the repeated
+  restart, live, idle and live sequence ended with zero matching system-log
+  entries and zero Repairs.
 - The local brand art has not been submitted to Home Assistant Brands, so
   validation that requires the public Brands repository may remain pending.
 - The documentation and issue URLs assume future publication at

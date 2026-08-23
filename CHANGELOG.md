@@ -133,6 +133,21 @@ All notable changes are documented here. Versions follow semantic versioning.
 - Current automated validation: 163 tests passed at 86.53% branch-aware
   coverage; Ruff and mypy passed. Two independent ARM64 helper builds produced
   the same proprietary-free archive.
+- Added a disabled-by-default Core-local media probe that invokes Home
+  Assistant's sibling FFprobe with bounded duration/output and reduces stderr
+  to redacted error codes. Yellow reported H.264 Baseline level 4.0,
+  1920×1080, 15 FPS, 708.3 kbit/s, 124 counted frames and MPEG-TS.
+- Corrected the probe's first-consumer gate: the temporary
+  `stream_probe_running` status no longer rejects the probe's own loopback
+  connection after all native capability checks have passed.
+- A final clean-log run exposed one timestamp discontinuity when a new producer
+  inherited an old cached GOP and wall-clock origin after idle. New native
+  sessions now clear cached media and reset transport timestamps while keeping
+  the loopback URL stable. After restart, live → idle → live displayed real
+  video, reached final idle with zero consumers/reconnects, and produced zero
+  matching system-log entries or Repairs.
+- Current automated validation: 189 tests passed at 85.86% branch-aware
+  coverage; Ruff, mypy, secret scan and release validation passed.
 
 ## [0.2.0] - Unreleased
 

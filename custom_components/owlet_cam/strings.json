@@ -131,6 +131,9 @@
       "run_frame_probe": {
         "name": "Run frame probe"
       },
+      "run_stream_probe": {
+        "name": "Run Core stream probe"
+      },
       "run_runtime_probe": {
         "name": "Run runtime probe"
       }
@@ -174,8 +177,20 @@
       "last_frame_probe": {
         "name": "Last frame probe"
       },
+      "last_stream_probe": {
+        "name": "Last Core stream probe"
+      },
       "runtime_status": {
         "name": "Runtime status"
+      },
+      "stream_bitrate": {
+        "name": "Stream bitrate"
+      },
+      "stream_codec": {
+        "name": "Stream codec"
+      },
+      "stream_profile": {
+        "name": "Stream profile"
       }
     }
   }

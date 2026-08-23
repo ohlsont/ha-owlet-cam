@@ -133,7 +133,7 @@ async def test_embedded_setup_unload_and_reload(hass: HomeAssistant) -> None:
         assert await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
         assert len(hass.states.async_entity_ids("binary_sensor")) == 4
-        assert len(hass.states.async_entity_ids("sensor")) == 7
+        assert len(hass.states.async_entity_ids("sensor")) == 11
 
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()

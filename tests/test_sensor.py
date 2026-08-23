@@ -19,6 +19,7 @@ from custom_components.owlet_cam.const import (
     MODE_EMBEDDED,
     REGION_EUROPE,
 )
+from custom_components.owlet_cam.runtime.media_probe import MediaProbeResult
 
 DSN = "OCD123456789"
 
@@ -83,10 +84,41 @@ async def test_embedded_entity_properties_use_only_cached_data(
             "binary_sensor.nursery_camera_credentials_available"
         )
         auth_expiry = hass.states.get("sensor.nursery_authentication_expiry")
+        manager = entry.runtime_data.runtime_manager
+        assert manager is not None
+        manager.snapshot.last_stream_probe = MediaProbeResult(
+            codec="h264",
+            profile="High",
+            level=40,
+            width=1920,
+            height=1080,
+            fps=14.0,
+            bitrate_kbps=750.0,
+            frames=112,
+            container="mpegts",
+        )
+        manager.snapshot.last_stream_probe_at = expiry
+        manager._notify_listeners()
+        await hass.async_block_till_done()
+        resolution = hass.states.get("sensor.nursery_detected_resolution")
+        fps = hass.states.get("sensor.nursery_detected_fps")
+        codec = hass.states.get("sensor.nursery_stream_codec")
+        profile = hass.states.get("sensor.nursery_stream_profile")
+        bitrate = hass.states.get("sensor.nursery_stream_bitrate")
 
     assert cloud is not None
     assert cloud.state == "on"
     assert credentials is not None
     assert credentials.state == "on"
     assert auth_expiry is not None
+    assert resolution is not None
+    assert resolution.state == "1920x1080"
+    assert fps is not None
+    assert fps.state == "14.0"
+    assert codec is not None
+    assert codec.state == "h264"
+    assert profile is not None
+    assert profile.state == "High"
+    assert bitrate is not None
+    assert bitrate.state == "750.0"
     validate.assert_not_awaited()

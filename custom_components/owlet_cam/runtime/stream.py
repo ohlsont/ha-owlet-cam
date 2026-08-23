@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import secrets
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
@@ -20,6 +19,7 @@ _PAT_PID: Final = 0x0000
 _VIDEO_PID: Final = 0x0100
 _PMT_PID: Final = 0x1000
 _PTS_CLOCK: Final = 90_000
+_STREAM_PATH: Final = "/owlet-cam.ts"
 
 type AsyncCallback = Callable[[], Awaitable[None]]
 
@@ -36,7 +36,6 @@ class H264LoopbackServer:
         self._on_first_client = on_first_client
         self._on_last_client = on_last_client
         self._server: asyncio.Server | None = None
-        self._token = secrets.token_urlsafe(32)
         self._subscribers: dict[asyncio.Queue[bytes | None], bool] = {}
         self._client_tasks: set[asyncio.Task[None]] = set()
         self._parameter_sets: dict[int, bytes] = {}
@@ -63,7 +62,7 @@ class H264LoopbackServer:
         if server is None or not server.sockets:
             return None
         port = server.sockets[0].getsockname()[1]
-        return f"http://127.0.0.1:{port}/{self._token}.ts"
+        return f"http://127.0.0.1:{port}{_STREAM_PATH}"
 
     async def async_start(self) -> str:
         """Bind an ephemeral IPv4 loopback port and return its source URL."""
@@ -148,6 +147,10 @@ class H264LoopbackServer:
             # listening socket. Close our tracked responses first so a
             # retained go2rtc consumer cannot deadlock config-entry unload.
             await server.wait_closed()
+        self.reset_media()
+
+    def reset_media(self) -> None:
+        """Discard cached media and reset timestamps before a new producer."""
         self._parameter_sets.clear()
         self._gop.clear()
         self._gop_bytes = 0
@@ -175,7 +178,7 @@ class H264LoopbackServer:
                 await _async_write_response(writer, b"400 Bad Request")
                 return
             request_line = request.split(b"\r\n", 1)[0]
-            expected = f"GET /{self._token}.ts HTTP/1.".encode()
+            expected = f"GET {_STREAM_PATH} HTTP/1.".encode()
             if not request_line.startswith(expected):
                 await _async_write_response(writer, b"404 Not Found")
                 return
