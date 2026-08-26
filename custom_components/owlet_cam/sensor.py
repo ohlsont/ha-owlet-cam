@@ -100,6 +100,16 @@ _RUNTIME_DESCRIPTIONS = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    SensorEntityDescription(
+        key="audio_status",
+        translation_key="audio_status",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="audio_codec",
+        translation_key="audio_codec",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 )
 
 _BRIDGE_DESCRIPTIONS = (
@@ -322,4 +332,12 @@ class OwletCamRuntimeSensor(OwletCamRuntimeEntity, SensorEntity):
                 return stream_probe.profile if stream_probe is not None else None
             case "stream_bitrate":
                 return stream_probe.bitrate_kbps if stream_probe is not None else None
+            case "audio_status":
+                return snapshot.audio_status
+            case "audio_codec":
+                if snapshot.audio_codec_id == 0x86:
+                    return "AAC-LC (raw)"
+                if snapshot.audio_codec_id == 0x87:
+                    return "AAC-LC (ADTS)"
+                return None
         return None

@@ -2,6 +2,29 @@
 
 All notable changes are documented here. Versions follow semantic versioning.
 
+## [0.8.0] - Unreleased
+
+### Added
+
+- Optional incoming AAC-LC audio for embedded live streams. The isolated native
+  helper drains ThroughTek's audio FIFO into a separate inherited pipe, and the
+  integration adds 8 kHz mono AAC to the loopback MPEG-TS without transcoding.
+- Cached audio status, codec, frame counters and safe error codes in diagnostic
+  entities and downloadable diagnostics.
+
+### Safety
+
+- Audio remains disabled by default. Unsupported codecs, malformed audio frames
+  and audio-pipe failures are isolated from the H.264 producer so video can
+  continue in a bounded video-only fallback mode.
+
+### Validation status
+
+- Python packetizer, separate-pipe supervision, malformed-audio fallback and
+  strict FFprobe parsing are covered by automated tests. Real Owlet Cam audio
+  and Yellow playback remain unverified until the 0.8.0 helper is deployed and
+  FFprobe plus a Home Assistant client receive actual audio.
+
 ## [0.7.0] - Unreleased
 
 ### Added

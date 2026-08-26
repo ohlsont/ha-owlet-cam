@@ -28,6 +28,7 @@ ThroughTek.
 |---|---|---|
 | Native Home Assistant camera | Yes | Yes |
 | Live video | Bridge-provided RTSP | H.264 through a loopback-only MPEG-TS source |
+| Incoming audio | Bridge-provided | Experimental AAC-LC; disabled by default |
 | Still images | Bridge snapshot or stream | Yes |
 | `camera.snapshot` | When the source supports it | Tested on Yellow |
 | `camera.record` | When the source supports it | Tested on Yellow |
@@ -37,8 +38,10 @@ ThroughTek.
 | Architecture | Any Home Assistant architecture supported by the bridge client | AArch64 only |
 | Validation status | Automated fake-bridge coverage; real bridge gate pending | Bounded real Owlet Cam 1 validation on Yellow |
 
-Audio and two-way talk are not currently supported. Incoming audio is disabled
-even if the option is visible.
+Embedded incoming audio is experimental in 0.8.0 and remains disabled by
+default. Its separate-pipe and AAC/MPEG-TS path has automated and synthetic
+FFmpeg coverage, but real-camera Yellow validation is still required. Two-way
+talk is not supported.
 
 ## Choose a connection mode
 
@@ -200,8 +203,9 @@ is requested in metric units and Home Assistant handles display conversion.
 
 Runtime status, helper version, application version, ABI, library
 compatibility, detected resolution/FPS, stream codec/profile/bitrate, frame
-receipt, and last bounded probe results are available without exposing secret
-values. Diagnostic action buttons are disabled by default.
+receipt, audio status/codec, safe audio failure code, and last bounded probe
+results are available without exposing secret values. Diagnostic action buttons
+are disabled by default.
 
 ## Screenshot
 
@@ -225,14 +229,16 @@ Defaults favor stability and coexistence with the official app:
 
 - Keep camera session warm: off.
 - Idle disconnect: 60 seconds.
-- Audio: off and currently unsupported.
+- Incoming audio: off; experimental AAC-LC when enabled.
 - Prefer direct P2P: observation only; not enforced.
 - Experimental local sensors: off.
 - Retain uploaded application package: off.
 
-Embedded video starts when Home Assistant requests it and stops after the idle
+Embedded media starts when Home Assistant requests it and stops after the idle
 timeout unless keep-warm is enabled. Multiple Home Assistant viewers share one
-native camera producer. H.264 is copied without video transcoding.
+native camera producer. H.264 and supported AAC are copied without
+transcoding. Audio uses a separate inherited helper pipe; an audio failure is
+recorded and drained independently so the H.264 stream can continue.
 
 ## Reconfigure, reauthenticate, and remove private files
 
@@ -286,7 +292,7 @@ versions, and repeated stream recovery failure.
 | Runtime download fails | Confirm internet access and that a matching public GitHub release contains the AArch64 helper and checksums. |
 | Runtime never becomes ready | Open the associated Repair, enable **Run runtime probe**, and download redacted diagnostics after the bounded probe. |
 | Camera is temporarily unavailable | Wait for bounded recovery. If it persists, close the official app, leave keep-warm off, then use **Restart embedded stream**. |
-| Live view has no audio | Audio is intentionally unsupported in the current release. |
+| Live view has no audio | Enable **Incoming audio** in integration options, reopen the stream, and inspect **Audio status** / **Audio codec**. `unavailable` means the camera returned an unsupported codec or the isolated audio path failed; video should continue. |
 
 For support, download diagnostics from the Owlet Cam device and open an issue.
 Never attach an APK, `.owletcam` file, SDK key, account password, token, camera
@@ -300,7 +306,9 @@ UID, AuthKey, or AV password.
   user-reported Owlet Cam 1.
 - External bridge mode has automated compatibility tests but no completed real
   bridge/media acceptance gate.
-- Audio, two-way talk, lullabies, and embedded room sensors are unsupported.
+- Embedded incoming audio is experimental and has not yet passed its real
+  Owlet Cam / Yellow playback gate. Two-way talk, lullabies, and embedded room
+  sensors are unsupported.
 - Cloud authentication and fresh camera connection metadata remain necessary;
   the project does not claim fully offline operation.
 - Formal two-hour/overnight viewing, Companion app inside/outside LAN, physical

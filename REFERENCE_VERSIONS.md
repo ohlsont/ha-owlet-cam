@@ -1,6 +1,7 @@
 # Reference versions
 
-Inspected on **2026-08-21** and the bridge API was rechecked on **2026-08-26**.
+Inspected on **2026-08-21**; the bridge API and audio observations were rechecked
+on **2026-08-26**.
 Commit hashes were resolved from each repository's
 default branch and the licence determination was made from files present at
 that exact shallow checkout. No unlicensed implementation source was copied
@@ -25,6 +26,18 @@ a locally generated interception CA on the phone, and its tree contains the
 capture CA certificate and private key. Its Docker build downloads a generic
 ThroughTek shared object from another repository rather than using libraries
 from the user's Owlet application. Neither mechanism is used by this project.
+
+On 2026-08-26, the pinned `jquick/owlet-go` revision was re-inspected narrowly
+for incoming-audio observations. It independently identifies an audio-start
+control followed by `avRecvAudioData`, and treats the resulting access units as
+AAC-LC at 8 kHz mono. ThroughTek's public Kalay documentation independently
+confirms that audio is received from the AV channel through a separate
+`avRecvAudioData` loop and defines the public codec IDs for raw AAC (`0x86`),
+ADTS AAC (`0x87`) and LATM AAC (`0x88`). FFmpeg's public MPEG-TS definitions
+identify AAC stream type `0x0f`. No source, header, control flow, or struct
+definition was copied from the unlicensed reference project; the helper ABI,
+separate inherited-pipe framing, ADTS construction, MPEG-TS packetizer and
+tests were independently written in this repository.
 
 Milestone 1 additionally used Google's public Firebase Auth REST documentation
 to independently implement password authentication, token expiry parsing, and

@@ -31,6 +31,9 @@ class MediaProbeResult:
     bitrate_kbps: float
     frames: int
     container: str
+    audio_codec: str | None = None
+    audio_sample_rate: int | None = None
+    audio_channels: int | None = None
 
 
 def ffprobe_binary(ffmpeg_binary: str) -> str:
@@ -83,6 +86,7 @@ def parse_media_probe_output(
     observed_frames: int,
     observed_bytes: int,
     observed_seconds: float,
+    expect_audio: bool = False,
 ) -> MediaProbeResult:
     """Parse only the bounded fields requested from FFprobe."""
     if not payload or len(payload) > _MAX_PROBE_OUTPUT:
@@ -94,9 +98,17 @@ def parse_media_probe_output(
     if not isinstance(document, dict):
         raise MediaProbeError("FFprobe result must be an object")
     streams = document.get("streams")
-    if not isinstance(streams, list) or len(streams) != 1:
+    if not isinstance(streams, list) or not 1 <= len(streams) <= 3:
+        raise MediaProbeError("FFprobe reported an invalid stream count")
+    video_streams = [
+        item
+        for item in streams
+        if isinstance(item, dict)
+        and (item.get("codec_type") == "video" or item.get("codec_name") == "h264")
+    ]
+    if len(video_streams) != 1:
         raise MediaProbeError("FFprobe did not report exactly one video stream")
-    stream = streams[0]
+    stream = video_streams[0]
     if not isinstance(stream, dict):
         raise MediaProbeError("FFprobe video stream is invalid")
 
@@ -137,6 +149,33 @@ def parse_media_probe_output(
     if not isinstance(container, str) or "mpegts" not in container.split(","):
         raise MediaProbeError("FFprobe did not recognize the MPEG-TS container")
 
+    audio_codec: str | None = None
+    audio_sample_rate: int | None = None
+    audio_channels: int | None = None
+    audio_streams = [
+        item
+        for item in streams
+        if isinstance(item, dict) and item.get("codec_type") == "audio"
+    ]
+    if len(audio_streams) > 1:
+        raise MediaProbeError("FFprobe reported multiple audio streams")
+    if audio_streams:
+        audio = audio_streams[0]
+        audio_codec_value = audio.get("codec_name")
+        sample_rate_value = audio.get("sample_rate")
+        channels_value = audio.get("channels")
+        if audio_codec_value != "aac":
+            raise MediaProbeError("The Core-local audio stream is not AAC")
+        if isinstance(sample_rate_value, str) and sample_rate_value.isdecimal():
+            sample_rate_value = int(sample_rate_value)
+        if sample_rate_value != 8000 or channels_value != 1:
+            raise MediaProbeError("The Core-local AAC format is unsupported")
+        audio_codec = audio_codec_value
+        audio_sample_rate = sample_rate_value
+        audio_channels = channels_value
+    elif expect_audio:
+        raise MediaProbeError("FFprobe did not find the enabled audio stream")
+
     return MediaProbeResult(
         codec=codec,
         profile=profile,
@@ -147,6 +186,9 @@ def parse_media_probe_output(
         bitrate_kbps=round(observed_bytes * 8 / observed_seconds / 1000, 1),
         frames=counted_frames,
         container="mpegts",
+        audio_codec=audio_codec,
+        audio_sample_rate=audio_sample_rate,
+        audio_channels=audio_channels,
     )
 
 

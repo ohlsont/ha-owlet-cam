@@ -46,6 +46,85 @@ def test_media_probe_parses_only_safe_bounded_facts() -> None:
     assert result.bitrate_kbps == 750.0
     assert result.frames == 112
     assert result.container == "mpegts"
+    assert result.audio_codec is None
+
+
+def test_media_probe_confirms_enabled_aac_audio() -> None:
+    document = json.loads(_payload())
+    document["streams"][0]["codec_type"] = "video"
+    document["streams"].append(
+        {
+            "codec_type": "audio",
+            "codec_name": "aac",
+            "sample_rate": "8000",
+            "channels": 1,
+        }
+    )
+
+    result = parse_media_probe_output(
+        json.dumps(document).encode(),
+        observed_frames=112,
+        observed_bytes=750_000,
+        observed_seconds=8.0,
+        expect_audio=True,
+    )
+
+    assert result.audio_codec == "aac"
+    assert result.audio_sample_rate == 8000
+    assert result.audio_channels == 1
+
+
+def test_media_probe_requires_audio_when_enabled() -> None:
+    with pytest.raises(MediaProbeError, match="enabled audio"):
+        parse_media_probe_output(
+            _payload(),
+            observed_frames=112,
+            observed_bytes=750_000,
+            observed_seconds=8.0,
+            expect_audio=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "audio_streams",
+    [
+        [
+            {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "sample_rate": "8000",
+                "channels": 1,
+            }
+        ],
+        [
+            {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "sample_rate": "16000",
+                "channels": 2,
+            }
+        ],
+        [
+            {"codec_type": "audio", "codec_name": "aac"},
+            {"codec_type": "audio", "codec_name": "aac"},
+        ],
+    ],
+)
+def test_media_probe_rejects_unsupported_audio_streams(
+    audio_streams: list[dict[str, object]],
+) -> None:
+    document = json.loads(_payload())
+    document["streams"][0]["codec_type"] = "video"
+    document["streams"].extend(audio_streams)
+
+    with pytest.raises(MediaProbeError):
+        parse_media_probe_output(
+            json.dumps(document).encode(),
+            observed_frames=112,
+            observed_bytes=750_000,
+            observed_seconds=8.0,
+            expect_audio=True,
+        )
 
 
 @pytest.mark.parametrize(

@@ -14,6 +14,7 @@ from .protocol import MAX_HELPER_OUTPUT
 
 _TERMINATE_TIMEOUT: Final = 5.0
 _MAX_STREAM_FRAME: Final = 4 * 1024 * 1024
+_MAX_AUDIO_FRAME: Final = 64 * 1024
 
 
 class OwletHelperProcessError(RuntimeError):
@@ -151,20 +152,29 @@ class OwletHelperProcessRunner:
         stdin: bytearray,
         no_frame_timeout: float,
         on_frame: Callable[[bytes], Awaitable[None]],
+        audio_pipe: tuple[int, int] | None = None,
+        on_audio_frame: Callable[[int, bytes], Awaitable[None]] | None = None,
+        on_audio_error: Callable[[str], Awaitable[None]] | None = None,
         cwd: Path | None = None,
         environment: Mapping[str, str] | None = None,
     ) -> bytes:
         """Run one streaming helper until it exits or is stopped.
 
-        The helper's stdout is a sequence of unsigned big-endian frame lengths
-        followed by Annex-B H.264 access units. Its stderr is reserved for one
-        bounded, redacted JSON status event.
+        The helper's stdout carries length-prefixed Annex-B H.264. When audio is
+        enabled, a separately inherited pipe carries an eight-byte header
+        (payload length, codec id, reserved bytes) followed by one audio frame.
+        Stderr remains reserved for one bounded, redacted JSON status event.
         """
         if no_frame_timeout <= 0 or not command:
             raise ValueError("Invalid helper stream configuration")
         arguments = tuple(str(part) for part in command)
         async with self._lock:
             stderr_task: asyncio.Task[bytes] | None = None
+            audio_task: asyncio.Task[None] | None = None
+            audio_transport: asyncio.ReadTransport | None = None
+            audio_read_file: object | None = None
+            audio_read_fd = audio_pipe[0] if audio_pipe is not None else -1
+            audio_write_fd = audio_pipe[1] if audio_pipe is not None else -1
             try:
                 self._process = await asyncio.create_subprocess_exec(
                     *arguments,
@@ -177,10 +187,14 @@ class OwletHelperProcessRunner:
                         "LANG": "C",
                         **(environment or {}),
                     },
+                    pass_fds=(audio_write_fd,) if audio_write_fd >= 0 else (),
                     start_new_session=True,
                 )
                 self._record_started()
                 process = self._process
+                if audio_write_fd >= 0:
+                    os.close(audio_write_fd)
+                    audio_write_fd = -1
                 if (
                     process.stdin is None
                     or process.stdout is None
@@ -188,6 +202,22 @@ class OwletHelperProcessRunner:
                 ):
                     raise OwletHelperProcessError("Native helper pipes are unavailable")
                 stderr_task = asyncio.create_task(_read_limited(process.stderr))
+                if audio_read_fd >= 0 and on_audio_frame is not None:
+                    audio_reader = asyncio.StreamReader(limit=_MAX_AUDIO_FRAME + 8)
+                    protocol = asyncio.StreamReaderProtocol(audio_reader)
+                    audio_read_file = os.fdopen(audio_read_fd, "rb", buffering=0)
+                    audio_read_fd = -1
+                    transport, _ = await asyncio.get_running_loop().connect_read_pipe(
+                        lambda: protocol, audio_read_file
+                    )
+                    audio_transport = transport
+                    audio_task = asyncio.create_task(
+                        _consume_audio_frames(
+                            audio_reader,
+                            on_audio_frame=on_audio_frame,
+                            on_audio_error=on_audio_error,
+                        )
+                    )
                 process.stdin.write(stdin)
                 await process.stdin.drain()
                 process.stdin.close()
@@ -218,6 +248,8 @@ class OwletHelperProcessRunner:
 
                 returncode = await process.wait()
                 stderr = await stderr_task
+                if audio_task is not None:
+                    await audio_task
                 if returncode != 0:
                     raise OwletHelperProcessError(
                         "Native stream helper failed", code="stream_helper_failed"
@@ -238,6 +270,15 @@ class OwletHelperProcessRunner:
                 if stderr_task is not None and not stderr_task.done():
                     stderr_task.cancel()
                     await asyncio.gather(stderr_task, return_exceptions=True)
+                if audio_transport is not None:
+                    audio_transport.close()
+                if audio_task is not None and not audio_task.done():
+                    audio_task.cancel()
+                    await asyncio.gather(audio_task, return_exceptions=True)
+                if audio_read_fd >= 0:
+                    os.close(audio_read_fd)
+                if audio_write_fd >= 0:
+                    os.close(audio_write_fd)
                 if self._process is not None:
                     self._record_reaped(self._process)
                 self._process = None
@@ -290,6 +331,47 @@ class OwletHelperProcessRunner:
                 self._last_exit_reason = "signaled"
             else:
                 self._last_exit_reason = "failed"
+
+
+async def _consume_audio_frames(
+    reader: asyncio.StreamReader,
+    *,
+    on_audio_frame: Callable[[int, bytes], Awaitable[None]],
+    on_audio_error: Callable[[str], Awaitable[None]] | None,
+) -> None:
+    """Drain the optional audio FIFO without allowing it to stop video."""
+    publishing = True
+    try:
+        while True:
+            try:
+                header = await reader.readexactly(8)
+            except asyncio.IncompleteReadError as err:
+                if err.partial and on_audio_error is not None:
+                    await on_audio_error("audio_incomplete_frame")
+                return
+            size = int.from_bytes(header[:4], "big")
+            codec_id = int.from_bytes(header[4:6], "big")
+            if size < 1 or size > _MAX_AUDIO_FRAME:
+                if on_audio_error is not None:
+                    await on_audio_error("audio_invalid_frame")
+                while await reader.read(4096):
+                    pass
+                return
+            try:
+                frame = await reader.readexactly(size)
+            except asyncio.IncompleteReadError:
+                if on_audio_error is not None:
+                    await on_audio_error("audio_incomplete_frame")
+                return
+            if publishing:
+                try:
+                    await on_audio_frame(codec_id, frame)
+                except Exception:
+                    publishing = False
+                    if on_audio_error is not None:
+                        await on_audio_error("audio_publish_failed")
+    except asyncio.CancelledError:
+        raise
 
 
 async def _read_limited(

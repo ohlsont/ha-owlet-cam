@@ -98,6 +98,8 @@ async def test_embedded_entity_properties_use_only_cached_data(
             container="mpegts",
         )
         manager.snapshot.last_stream_probe_at = expiry
+        manager.snapshot.audio_status = "streaming"
+        manager.snapshot.audio_codec_id = 0x86
         manager._notify_listeners()
         await hass.async_block_till_done()
         resolution = hass.states.get("sensor.nursery_detected_resolution")
@@ -105,6 +107,8 @@ async def test_embedded_entity_properties_use_only_cached_data(
         codec = hass.states.get("sensor.nursery_stream_codec")
         profile = hass.states.get("sensor.nursery_stream_profile")
         bitrate = hass.states.get("sensor.nursery_stream_bitrate")
+        audio_status = hass.states.get("sensor.nursery_audio_status")
+        audio_codec = hass.states.get("sensor.nursery_audio_codec")
 
     assert cloud is not None
     assert cloud.state == "on"
@@ -121,4 +125,8 @@ async def test_embedded_entity_properties_use_only_cached_data(
     assert profile.state == "High"
     assert bitrate is not None
     assert bitrate.state == "750.0"
+    assert audio_status is not None
+    assert audio_status.state == "streaming"
+    assert audio_codec is not None
+    assert audio_codec.state == "AAC-LC (raw)"
     validate.assert_not_awaited()

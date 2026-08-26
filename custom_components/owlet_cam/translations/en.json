@@ -310,6 +310,12 @@
       "sound_level": {
         "name": "Sound level"
       },
+      "audio_status": {
+        "name": "Audio status"
+      },
+      "audio_codec": {
+        "name": "Audio codec"
+      },
       "stream_bitrate": {
         "name": "Stream bitrate"
       },

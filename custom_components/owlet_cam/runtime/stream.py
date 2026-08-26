@@ -17,8 +17,14 @@ _CLIENT_TASK_STOP_TIMEOUT: Final = 3.0
 _TS_PACKET_SIZE: Final = 188
 _PAT_PID: Final = 0x0000
 _VIDEO_PID: Final = 0x0100
+_AUDIO_PID: Final = 0x0101
 _PMT_PID: Final = 0x1000
 _PTS_CLOCK: Final = 90_000
+_AAC_SAMPLE_RATE: Final = 8_000
+_AAC_CHANNELS: Final = 1
+_AAC_SAMPLES_PER_FRAME: Final = 1_024
+_CODEC_AAC_RAW: Final = 0x86
+_CODEC_AAC_ADTS: Final = 0x87
 _STREAM_PATH: Final = "/owlet-cam.ts"
 
 type AsyncCallback = Callable[[], Awaitable[None]]
@@ -32,6 +38,7 @@ class H264LoopbackServer:
         *,
         on_first_client: AsyncCallback,
         on_last_client: AsyncCallback,
+        audio_enabled: bool = False,
     ) -> None:
         self._on_first_client = on_first_client
         self._on_last_client = on_last_client
@@ -43,7 +50,8 @@ class H264LoopbackServer:
         self._gop_bytes = 0
         self._healthy = False
         self._stopping = False
-        self._muxer = _MpegTsMuxer()
+        self._audio_enabled = audio_enabled
+        self._muxer = _MpegTsMuxer(audio_enabled=audio_enabled)
 
     @property
     def healthy(self) -> bool:
@@ -122,6 +130,26 @@ class H264LoopbackServer:
                 queue.put_nowait(queued_payload)
             except asyncio.QueueFull:
                 self._disconnect_slow_subscriber(queue)
+
+    async def async_publish_audio(self, frame: bytes, *, codec_id: int) -> bool:
+        """Publish one supported AAC access unit without affecting video health."""
+        if not self._audio_enabled or not self._healthy or not frame:
+            return False
+        if codec_id == _CODEC_AAC_RAW:
+            access_unit = _adts_header(len(frame)) + frame
+        elif codec_id == _CODEC_AAC_ADTS and _is_adts(frame):
+            access_unit = frame
+        else:
+            return False
+        payload = self._muxer.mux_audio_access_unit(access_unit)
+        for queue, ready in tuple(self._subscribers.items()):
+            if not ready:
+                continue
+            try:
+                queue.put_nowait(payload)
+            except asyncio.QueueFull:
+                self._disconnect_slow_subscriber(queue)
+        return True
 
     async def async_stop(self) -> None:
         """Close the listener and every active response."""
@@ -253,18 +281,21 @@ class H264LoopbackServer:
 
 
 class _MpegTsMuxer:
-    """Minimal single-program H.264 MPEG-TS packetizer with wall-clock PTS."""
+    """Minimal H.264 and optional AAC MPEG-TS packetizer."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, audio_enabled: bool = False) -> None:
+        self._audio_enabled = audio_enabled
         self._continuity: dict[int, int] = {}
         self._started_at: float | None = None
         self._last_pts = 0
+        self._last_audio_pts: int | None = None
 
     def reset(self) -> None:
         """Reset timestamps and continuity counters for a new producer."""
         self._continuity.clear()
         self._started_at = None
         self._last_pts = 0
+        self._last_audio_pts = None
 
     def mux_access_unit(self, access_unit: bytes, *, random_access: bool) -> bytes:
         """Return PAT, PMT, and one timestamped H.264 PES as TS packets."""
@@ -276,10 +307,38 @@ class _MpegTsMuxer:
         tables = b""
         if random_access:
             tables = self._psi_packet(_PAT_PID, _pat_section()) + self._psi_packet(
-                _PMT_PID, _pmt_section()
+                _PMT_PID, _pmt_section(audio_enabled=self._audio_enabled)
             )
-        pes = _pes_packet(access_unit, pts)
-        return tables + self._packetize_pes(pes, pts, random_access=random_access)
+        pes = _pes_packet(access_unit, pts, stream_id=0xE0, bounded_length=False)
+        return tables + self._packetize_pes(
+            pes,
+            pid=_VIDEO_PID,
+            pcr=pts,
+            random_access=random_access,
+        )
+
+    def mux_audio_access_unit(self, access_unit: bytes) -> bytes:
+        """Return one timestamped ADTS AAC PES as fixed-size TS packets."""
+        if not self._audio_enabled:
+            raise ValueError("Audio is disabled")
+        now = time.monotonic()
+        if self._started_at is None:
+            self._started_at = now
+        elapsed_pts = int((now - self._started_at) * _PTS_CLOCK)
+        step = _PTS_CLOCK * _AAC_SAMPLES_PER_FRAME // _AAC_SAMPLE_RATE
+        pts = (
+            elapsed_pts
+            if self._last_audio_pts is None
+            else max(elapsed_pts, self._last_audio_pts + step)
+        )
+        self._last_audio_pts = pts
+        pes = _pes_packet(access_unit, pts, stream_id=0xC0, bounded_length=True)
+        return self._packetize_pes(
+            pes,
+            pid=_AUDIO_PID,
+            pcr=None,
+            random_access=False,
+        )
 
     def _psi_packet(self, pid: int, section: bytes) -> bytes:
         payload = b"\x00" + section
@@ -288,21 +347,30 @@ class _MpegTsMuxer:
         header = _ts_header(pid, True, False, self._next_continuity(pid))
         return header + payload + (b"\xff" * (184 - len(payload)))
 
-    def _packetize_pes(self, pes: bytes, pts: int, *, random_access: bool) -> bytes:
+    def _packetize_pes(
+        self,
+        pes: bytes,
+        *,
+        pid: int,
+        pcr: int | None,
+        random_access: bool,
+    ) -> bytes:
         packets: list[bytes] = []
         offset = 0
         first = True
         while offset < len(pes):
             remaining = len(pes) - offset
-            require_pcr = first
+            require_pcr = first and pcr is not None
             payload_size = min(remaining, 176 if require_pcr else 184)
             adaptation = b""
             has_adaptation = require_pcr or payload_size < 184
             if has_adaptation:
                 adaptation_length = 183 - payload_size
                 if require_pcr:
+                    if pcr is None:
+                        raise RuntimeError("PCR timestamp is unavailable")
                     flags = 0x10 | (0x40 if random_access else 0)
-                    body = bytes((flags,)) + _encode_pcr(pts)
+                    body = bytes((flags,)) + _encode_pcr(pcr)
                     body += b"\xff" * (adaptation_length - len(body))
                 elif adaptation_length:
                     body = b"\x00" + (b"\xff" * (adaptation_length - 1))
@@ -310,10 +378,10 @@ class _MpegTsMuxer:
                     body = b""
                 adaptation = bytes((adaptation_length,)) + body
             header = _ts_header(
-                _VIDEO_PID,
+                pid,
                 first,
                 has_adaptation,
-                self._next_continuity(_VIDEO_PID),
+                self._next_continuity(pid),
             )
             packet = header + adaptation + pes[offset : offset + payload_size]
             if len(packet) != _TS_PACKET_SIZE:
@@ -365,8 +433,16 @@ def _pat_section() -> bytes:
     return section + _mpeg_crc32(section).to_bytes(4, "big")
 
 
-def _pmt_section() -> bytes:
-    section = bytes.fromhex("02b0120001c10000e100f0001be100f000")
+def _pmt_section(*, audio_enabled: bool = False) -> bytes:
+    streams = bytes.fromhex("1be100f000")
+    if audio_enabled:
+        streams += bytes.fromhex("0fe101f000")
+    section_length = 9 + len(streams) + 4
+    section = (
+        bytes((0x02, 0xB0 | ((section_length >> 8) & 0x0F), section_length & 0xFF))
+        + bytes.fromhex("0001c10000e100f000")
+        + streams
+    )
     return section + _mpeg_crc32(section).to_bytes(4, "big")
 
 
@@ -382,8 +458,49 @@ def _mpeg_crc32(data: bytes) -> int:
     return crc
 
 
-def _pes_packet(access_unit: bytes, pts: int) -> bytes:
-    return b"\x00\x00\x01\xe0\x00\x00\x80\x80\x05" + _encode_pts(pts) + access_unit
+def _pes_packet(
+    access_unit: bytes,
+    pts: int,
+    *,
+    stream_id: int,
+    bounded_length: bool,
+) -> bytes:
+    pes_length = len(access_unit) + 8
+    if not bounded_length or pes_length > 0xFFFF:
+        pes_length = 0
+    return (
+        b"\x00\x00\x01"
+        + bytes((stream_id,))
+        + pes_length.to_bytes(2, "big")
+        + b"\x80\x80\x05"
+        + _encode_pts(pts)
+        + access_unit
+    )
+
+
+def _adts_header(payload_size: int) -> bytes:
+    """Build an AAC-LC, 8 kHz, mono ADTS header for one raw access unit."""
+    if not 0 < payload_size <= 0x1FFF - 7:
+        raise ValueError("AAC access unit size is invalid")
+    frame_length = payload_size + 7
+    profile = 1  # AAC Low Complexity minus one, as encoded by ADTS.
+    frequency_index = 11  # 8 kHz, ISO/IEC 14496-3 table 1.16.
+    channels = _AAC_CHANNELS
+    return bytes(
+        (
+            0xFF,
+            0xF1,
+            (profile << 6) | (frequency_index << 2) | (channels >> 2),
+            ((channels & 0x03) << 6) | (frame_length >> 11),
+            (frame_length >> 3) & 0xFF,
+            ((frame_length & 0x07) << 5) | 0x1F,
+            0xFC,
+        )
+    )
+
+
+def _is_adts(frame: bytes) -> bool:
+    return len(frame) >= 7 and frame[0] == 0xFF and frame[1] & 0xF6 == 0xF0
 
 
 def _encode_pts(pts: int) -> bytes:

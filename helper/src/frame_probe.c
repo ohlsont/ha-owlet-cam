@@ -7,6 +7,7 @@
  */
 
 typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
 typedef unsigned long size_t;
 typedef long ssize_t;
@@ -36,16 +37,20 @@ extern signal_handler_fn signal(int signal_number, signal_handler_fn handler);
 #define CLOCK_MONOTONIC 1
 #define INPUT_MAX 2048
 #define FRAME_BUFFER_SIZE (4 * 1024 * 1024)
+#define AUDIO_BUFFER_SIZE (64 * 1024)
 #define FRAME_INFO_SIZE 28
 #define CONNECT_INPUT_SIZE 160
 #define AV_INPUT_SIZE 64
 #define AV_OUTPUT_SIZE 32
 #define IOCTRL_VIDEO_START 0x01ff
+#define IOCTRL_AUDIO_START 0x0300
 #define AV_ER_DATA_NOREADY -20012
 #define AV_ER_LOSED_THIS_FRAME -20014
 #define AV_ER_INCOMPLETE_FRAME -20013
 #define SIGTERM 15
 #define SIGINT 2
+#define SIGPIPE 13
+#define SIG_IGN ((signal_handler_fn)1)
 #define PR_SET_PDEATHSIG 1
 #ifdef STREAM_CAPTURE
 #define EVENT_NAME "stream_capture"
@@ -96,6 +101,9 @@ typedef int (*av_recv_frame2_fn)(int av_index, char *frame_data,
                                  int *frame_size, char *frame_info,
                                  int frame_info_max, int *frame_info_size,
                                  uint32_t *frame_number);
+typedef int (*av_recv_audio_fn)(int av_index, char *frame_data,
+                                int frame_data_max, char *frame_info,
+                                int frame_info_max, uint32_t *frame_number);
 typedef int (*av_client_stop_fn)(int av_index);
 typedef int (*av_deinitialize_fn)(void);
 
@@ -115,6 +123,7 @@ struct api {
     av_client_start_ex_fn av_client_start_ex;
     av_send_ioctrl_fn av_send_ioctrl;
     av_recv_frame2_fn av_recv_frame2;
+    av_recv_audio_fn av_recv_audio;
     av_client_stop_fn av_client_stop;
     av_deinitialize_fn av_deinitialize;
 };
@@ -124,8 +133,11 @@ struct secrets {
     char uid[128];
     char auth_key[32];
     char av_password[128];
-#ifdef SNAPSHOT_CAPTURE
+#if defined(SNAPSHOT_CAPTURE) || defined(STREAM_CAPTURE)
     int output_fd;
+#endif
+#ifdef STREAM_CAPTURE
+    int audio_enabled;
 #endif
 };
 
@@ -151,6 +163,7 @@ struct bit_reader {
 };
 
 static uint8_t frame_buffer[FRAME_BUFFER_SIZE];
+static uint8_t audio_buffer[AUDIO_BUFFER_SIZE];
 static uint8_t rbsp_buffer[4096];
 #ifdef STREAM_CAPTURE
 static volatile int stop_requested;
@@ -213,6 +226,22 @@ static int write_stream_frame(const uint8_t *data, size_t size) {
     header[3] = (uint8_t)size;
     return write_all_fd(1, header, sizeof(header)) &&
            write_all_fd(1, data, size);
+}
+
+static int write_audio_frame(int fd, uint16_t codec_id, const uint8_t *data,
+                             size_t size) {
+    uint8_t header[8];
+    if (size == 0 || size > AUDIO_BUFFER_SIZE) return 0;
+    header[0] = (uint8_t)(size >> 24);
+    header[1] = (uint8_t)(size >> 16);
+    header[2] = (uint8_t)(size >> 8);
+    header[3] = (uint8_t)size;
+    header[4] = (uint8_t)(codec_id >> 8);
+    header[5] = (uint8_t)codec_id;
+    header[6] = 0;
+    header[7] = 0;
+    return write_all_fd(fd, header, sizeof(header)) &&
+           write_all_fd(fd, data, size);
 }
 #endif
 
@@ -376,7 +405,7 @@ static int parse_json_string(const char *json, const char *key, char *output,
     return 0;
 }
 
-#ifdef SNAPSHOT_CAPTURE
+#if defined(SNAPSHOT_CAPTURE) || defined(STREAM_CAPTURE)
 static int parse_output_fd(const char *value, int *output_fd) {
     unsigned int result = 0;
     size_t index = 0;
@@ -402,9 +431,13 @@ static int read_secrets(struct secrets *values) {
     char input[INPUT_MAX];
     size_t used = 0;
     ssize_t received;
-#ifdef SNAPSHOT_CAPTURE
+#if defined(SNAPSHOT_CAPTURE) || defined(STREAM_CAPTURE)
     char output_fd[16];
     zero_bytes(output_fd, sizeof(output_fd));
+#endif
+#ifdef STREAM_CAPTURE
+    char audio_enabled[4];
+    zero_bytes(audio_enabled, sizeof(audio_enabled));
 #endif
     zero_bytes(input, sizeof(input));
     while (used + 1 < sizeof(input)) {
@@ -429,21 +462,36 @@ static int read_secrets(struct secrets *values) {
                            sizeof(values->auth_key)) ||
         !parse_json_string(input, "av_password", values->av_password,
                            sizeof(values->av_password))
-#ifdef SNAPSHOT_CAPTURE
+#if defined(SNAPSHOT_CAPTURE) || defined(STREAM_CAPTURE)
         || !parse_json_string(input, "output_fd", output_fd,
                               sizeof(output_fd))
         || !parse_output_fd(output_fd, &values->output_fd)
 #endif
+#ifdef STREAM_CAPTURE
+        || !parse_json_string(input, "audio_enabled", audio_enabled,
+                              sizeof(audio_enabled))
+        || (audio_enabled[0] != '0' && audio_enabled[0] != '1')
+        || audio_enabled[1] != '\0'
+#endif
     ) {
         scrub(input, sizeof(input));
-#ifdef SNAPSHOT_CAPTURE
+#if defined(SNAPSHOT_CAPTURE) || defined(STREAM_CAPTURE)
         scrub(output_fd, sizeof(output_fd));
+#endif
+#ifdef STREAM_CAPTURE
+        scrub(audio_enabled, sizeof(audio_enabled));
 #endif
         return 0;
     }
+#ifdef STREAM_CAPTURE
+    values->audio_enabled = audio_enabled[0] == '1';
+#endif
     scrub(input, sizeof(input));
-#ifdef SNAPSHOT_CAPTURE
+#if defined(SNAPSHOT_CAPTURE) || defined(STREAM_CAPTURE)
     scrub(output_fd, sizeof(output_fd));
+#endif
+#ifdef STREAM_CAPTURE
+    scrub(audio_enabled, sizeof(audio_enabled));
 #endif
     return 1;
 }
@@ -734,7 +782,7 @@ static void emit_success(const struct probe_stats *stats,
 }
 
 static int load_api(struct api *api, void **global_handle, void **iotc_handle,
-                    void **av_handle) {
+                    void **av_handle, int audio_requested) {
     *global_handle = dlopen("libTUTKGlobalAPIs.so", RTLD_NOW | RTLD_GLOBAL);
     *iotc_handle = dlopen("libIOTCAPIs.so", RTLD_NOW | RTLD_GLOBAL);
     *av_handle = dlopen("libAVAPIs.so", RTLD_NOW | RTLD_GLOBAL);
@@ -761,6 +809,9 @@ static int load_api(struct api *api, void **global_handle, void **iotc_handle,
     LOAD(api->av_client_start_ex, *av_handle, "avClientStartEx");
     LOAD(api->av_send_ioctrl, *av_handle, "avSendIOCtrl");
     LOAD(api->av_recv_frame2, *av_handle, "avRecvFrameData2");
+    if (audio_requested) {
+        LOAD(api->av_recv_audio, *av_handle, "avRecvAudioData");
+    }
     LOAD(api->av_client_stop, *av_handle, "avClientStop");
     LOAD(api->av_deinitialize, *av_handle, "avDeInitialize");
 #undef LOAD
@@ -777,9 +828,11 @@ static int run_probe(void) {
     uint8_t av_output[AV_OUTPUT_SIZE];
     struct session_info session;
     char frame_info[FRAME_INFO_SIZE];
+    char audio_info[FRAME_INFO_SIZE];
     const char account[] = "admin";
     const char cipher[] = "DEFAULT:@SECLEVEL=0";
     char start_video[8] = {0};
+    char start_audio[8] = {0};
     int iotc_initialized = 0, av_initialized = 0;
     int sid = -1, av_index = -1;
     int result = 1;
@@ -789,6 +842,7 @@ static int run_probe(void) {
 #ifdef STREAM_CAPTURE
     signal(SIGTERM, request_stop);
     signal(SIGINT, request_stop);
+    signal(SIGPIPE, SIG_IGN);
 #endif
     if (!arm_parent_death_signal()) {
         emit_error("parent_supervision", -1);
@@ -801,11 +855,19 @@ static int run_probe(void) {
     zero_bytes(av_input, sizeof(av_input));
     zero_bytes(av_output, sizeof(av_output));
     zero_bytes(&session, sizeof(session));
+    zero_bytes(frame_info, sizeof(frame_info));
+    zero_bytes(audio_info, sizeof(audio_info));
     if (!read_secrets(&values)) {
         emit_error("invalid_input", -1);
         goto cleanup;
     }
-    if (!load_api(&api, &global_handle, &iotc_handle, &av_handle)) {
+    if (!load_api(&api, &global_handle, &iotc_handle, &av_handle,
+#ifdef STREAM_CAPTURE
+                  values.audio_enabled
+#else
+                  0
+#endif
+                  )) {
         emit_error("library_symbols", -1);
         goto cleanup;
     }
@@ -890,6 +952,15 @@ static int run_probe(void) {
         emit_error("start_video", native_code);
         goto cleanup;
     }
+#ifdef STREAM_CAPTURE
+    if (values.audio_enabled) {
+        native_code = api.av_send_ioctrl(av_index, IOCTRL_AUDIO_START,
+                                         start_audio, sizeof(start_audio));
+        if (native_code < 0) {
+            values.audio_enabled = 0;
+        }
+    }
+#endif
     first_frame_started_ms = monotonic_ms();
 #ifdef STREAM_CAPTURE
     while (!stop_requested) {
@@ -902,6 +973,46 @@ static int run_probe(void) {
             av_index, (char *)frame_buffer, FRAME_BUFFER_SIZE, &data_size,
             &frame_size, frame_info, sizeof(frame_info), &info_size,
             &frame_number);
+#ifdef STREAM_CAPTURE
+        if (native_code >= 0) {
+            if (data_size > 0 && data_size <= FRAME_BUFFER_SIZE) {
+                if (stats.frames == 0)
+                    stats.first_frame_ms = monotonic_ms() - first_frame_started_ms;
+                stats.frames++;
+                stats.bytes += (unsigned long)data_size;
+                inspect_annex_b(frame_buffer, (size_t)data_size, &stats);
+                if (!write_stream_frame(frame_buffer, (size_t)data_size)) {
+                    emit_error("stream_output", -1);
+                    goto cleanup;
+                }
+            }
+        } else if (native_code != AV_ER_DATA_NOREADY &&
+                   native_code != AV_ER_LOSED_THIS_FRAME &&
+                   native_code != AV_ER_INCOMPLETE_FRAME) {
+            emit_error("receive_frame", native_code);
+            goto cleanup;
+        }
+        if (values.audio_enabled) {
+            uint32_t audio_frame_number = 0;
+            int audio_code = api.av_recv_audio(
+                av_index, (char *)audio_buffer, AUDIO_BUFFER_SIZE, audio_info,
+                sizeof(audio_info), &audio_frame_number);
+            if (audio_code > 0 && audio_code <= AUDIO_BUFFER_SIZE) {
+                uint16_t codec_id = (uint16_t)(uint8_t)audio_info[0] |
+                                    ((uint16_t)(uint8_t)audio_info[1] << 8);
+                if (!write_audio_frame(values.output_fd, codec_id, audio_buffer,
+                                       (size_t)audio_code)) {
+                    /* Audio failure is deliberately isolated from video. */
+                    values.audio_enabled = 0;
+                }
+            } else if (audio_code < 0 && audio_code != AV_ER_DATA_NOREADY &&
+                       audio_code != AV_ER_LOSED_THIS_FRAME &&
+                       audio_code != AV_ER_INCOMPLETE_FRAME) {
+                values.audio_enabled = 0;
+            }
+        }
+        if (native_code == AV_ER_DATA_NOREADY) usleep(3000);
+#else
         if (native_code >= 0) {
             if (data_size > 0 && data_size <= FRAME_BUFFER_SIZE) {
                 if (stats.frames == 0)
@@ -942,6 +1053,7 @@ static int run_probe(void) {
         }
         emit_error("receive_frame", native_code);
         goto cleanup;
+#endif
     }
 #ifdef STREAM_CAPTURE
     if (stats.frames == 0) {
@@ -974,7 +1086,10 @@ cleanup:
     scrub(av_input, sizeof(av_input));
     scrub(av_output, sizeof(av_output));
     scrub(&session, sizeof(session));
+    scrub(frame_info, sizeof(frame_info));
+    scrub(audio_info, sizeof(audio_info));
     scrub(frame_buffer, sizeof(frame_buffer));
+    scrub(audio_buffer, sizeof(audio_buffer));
     if (result == 0)
         emit_success(&stats, monotonic_ms() - started_ms);
     scrub(&stats, sizeof(stats));

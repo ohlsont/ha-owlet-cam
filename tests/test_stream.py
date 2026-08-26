@@ -11,6 +11,7 @@ import pytest
 from custom_components.owlet_cam.runtime import stream as stream_module
 from custom_components.owlet_cam.runtime.stream import (
     H264LoopbackServer,
+    _adts_header,
     _annex_b_nal_types,
     _MpegTsMuxer,
     _pat_section,
@@ -39,6 +40,32 @@ def test_mpeg_ts_muxer_emits_tables_timestamped_video_and_fixed_packets() -> Non
     assert b"\x00\x00\x01\xe0" in packets[2]
     assert _pat_section()[-4:] == bytes.fromhex("2ab104b2")
     assert _pmt_section()[-4:] == bytes.fromhex("15bd4d56")
+
+
+def test_mpeg_ts_muxer_adds_raw_aac_as_adts_on_an_independent_pid() -> None:
+    muxer = _MpegTsMuxer(audio_enabled=True)
+    video = muxer.mux_access_unit(SPS + PPS + IDR, random_access=True)
+    audio = muxer.mux_audio_access_unit(_adts_header(4) + b"aac!")
+
+    video_packets = [video[index : index + 188] for index in range(0, len(video), 188)]
+    audio_packets = [audio[index : index + 188] for index in range(0, len(audio), 188)]
+    assert [_packet_pid(packet) for packet in video_packets] == [0, 0x1000, 0x100]
+    assert all(_packet_pid(packet) == 0x101 for packet in audio_packets)
+    assert b"\x00\x00\x01\xc0" in audio_packets[0]
+    assert b"\xff\xf1" in audio_packets[0]
+    assert bytes.fromhex("0fe101f000") in _pmt_section(audio_enabled=True)
+
+
+def test_adts_header_describes_aac_lc_8khz_mono() -> None:
+    header = _adts_header(100)
+
+    assert header[:2] == b"\xff\xf1"
+    assert (header[2] >> 6) & 0x03 == 1
+    assert (header[2] >> 2) & 0x0F == 11
+    assert ((header[2] & 1) << 2) | (header[3] >> 6) == 1
+    assert ((header[3] & 0x03) << 11) | (header[4] << 3) | (header[5] >> 5) == 107
+    with pytest.raises(ValueError, match="AAC access unit size"):
+        _adts_header(0)
 
 
 async def test_loopback_server_discards_old_gop_before_a_new_producer(
@@ -84,6 +111,7 @@ async def test_loopback_server_fans_out_one_gated_producer(
     server = H264LoopbackServer(
         on_first_client=on_first_client,
         on_last_client=on_last_client,
+        audio_enabled=True,
     )
     url = await server.async_start()
     parsed = urlsplit(url)
@@ -115,6 +143,19 @@ async def test_loopback_server_fans_out_one_gated_producer(
     await server.async_publish(PFRAME)
     _assert_transport_stream(await first_reader.readexactly(188))
     _assert_transport_stream(await second_reader.readexactly(188))
+
+    assert await server.async_publish_audio(b"raw-aac", codec_id=0x86)
+    first_audio = await first_reader.readexactly(188)
+    second_audio = await second_reader.readexactly(188)
+    assert _packet_pid(first_audio) == 0x101
+    assert _packet_pid(second_audio) == 0x101
+    assert b"\xff\xf1" in first_audio
+
+    adts = _adts_header(4) + b"aac!"
+    assert await server.async_publish_audio(adts, codec_id=0x87)
+    assert _packet_pid(await first_reader.readexactly(188)) == 0x101
+    assert _packet_pid(await second_reader.readexactly(188)) == 0x101
+    assert not await server.async_publish_audio(b"unsupported", codec_id=0x8A)
 
     first_writer.close()
     second_writer.close()

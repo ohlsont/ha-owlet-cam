@@ -199,6 +199,12 @@ class RuntimeSnapshot:
     stream_last_interruption_code: str | None = None
     stream_last_recovery_at: datetime | None = None
     stream_last_stopped_at: datetime | None = None
+    audio_status: str = "disabled"
+    audio_frames: int = 0
+    audio_bytes: int = 0
+    audio_codec_id: int | None = None
+    audio_last_frame_at: datetime | None = None
+    audio_last_error_code: str | None = None
     application_status: str = "not_uploaded"
     last_application_upload_at: datetime | None = None
     last_application_upload_size: int | None = None
@@ -221,6 +227,7 @@ class OwletRuntimeManager:
         no_frame_timeout: float = 15.0,
         reconnect_backoff: float = 30.0,
         retain_application: bool = False,
+        enable_audio: bool = False,
     ) -> None:
         self._hass = hass
         self._root = root
@@ -239,6 +246,10 @@ class OwletRuntimeManager:
         self._no_frame_timeout = max(1.0, no_frame_timeout)
         self._reconnect_backoff = max(0.0, reconnect_backoff)
         self._retain_application = retain_application
+        self._audio_enabled = enable_audio
+        self.snapshot = RuntimeSnapshot(
+            audio_status="idle" if enable_audio else "disabled"
+        )
         self._stream_requested = False
         self._stream_task: asyncio.Task[None] | None = None
         self._idle_disconnect_task: asyncio.Task[None] | None = None
@@ -247,8 +258,8 @@ class OwletRuntimeManager:
         self._stream_server = H264LoopbackServer(
             on_first_client=self._async_stream_client_connected,
             on_last_client=self._async_stream_client_disconnected,
+            audio_enabled=enable_audio,
         )
-        self.snapshot = RuntimeSnapshot()
 
     @property
     def supported_architecture(self) -> bool:
@@ -706,15 +717,14 @@ class OwletRuntimeManager:
                     "error",
                     "-rw_timeout",
                     str(int(_STREAM_PROBE_TIMEOUT * 1_000_000)),
-                    "-select_streams",
-                    "v:0",
                     "-count_frames",
                     "-read_intervals",
                     f"%+{_STREAM_PROBE_SECONDS:g}",
                     "-show_entries",
                     (
-                        "stream=codec_name,profile,level,width,height,"
-                        "avg_frame_rate,nb_read_frames:format=format_name"
+                        "stream=codec_type,codec_name,profile,level,width,height,"
+                        "avg_frame_rate,nb_read_frames,sample_rate,channels:"
+                        "format=format_name"
                     ),
                     "-of",
                     "json",
@@ -739,6 +749,7 @@ class OwletRuntimeManager:
                     observed_frames=self.snapshot.stream_frames - frames_before,
                     observed_bytes=self.snapshot.stream_bytes - bytes_before,
                     observed_seconds=elapsed,
+                    expect_audio=self._audio_enabled,
                 )
                 self._raise_if_stopped()
                 self.snapshot.last_stream_probe = probe
@@ -828,6 +839,8 @@ class OwletRuntimeManager:
         self.snapshot.stream_active = False
         self.snapshot.stream_healthy = False
         self.snapshot.stream_status = "idle"
+        if self._audio_enabled:
+            self.snapshot.audio_status = "idle"
         if had_stream:
             self.snapshot.stream_stop_count += 1
             self.snapshot.stream_last_stopped_at = datetime.now(UTC)
@@ -880,6 +893,8 @@ class OwletRuntimeManager:
             self.snapshot.stream_status = "connecting" if attempt == 0 else "recovering"
             self.snapshot.stream_active = False
             self.snapshot.stream_healthy = False
+            if self._audio_enabled:
+                self.snapshot.audio_status = "starting"
             self._notify_listeners()
             try:
                 prepared = self._prepared
@@ -891,11 +906,16 @@ class OwletRuntimeManager:
                 credentials = await self._client.async_get_camera_credentials(
                     self._camera_identifier
                 )
+                audio_pipe: tuple[int, int] | None = (
+                    os.pipe() if self._audio_enabled else None
+                )
                 payload = _secret_json_payload(
                     sdk_key=sdk_key,
                     uid=credentials.uid,
                     auth_key=credentials.auth_key,
                     av_password=credentials.av_password,
+                    output_fd=audio_pipe[1] if audio_pipe is not None else 3,
+                    audio_enabled=self._audio_enabled,
                 )
                 del credentials
                 command, environment = self._helper_invocation(
@@ -910,6 +930,17 @@ class OwletRuntimeManager:
                     stdin=payload,
                     no_frame_timeout=self._no_frame_timeout,
                     on_frame=self._async_publish_stream_frame,
+                    audio_pipe=audio_pipe,
+                    on_audio_frame=(
+                        self._async_publish_stream_audio
+                        if audio_pipe is not None
+                        else None
+                    ),
+                    on_audio_error=(
+                        self._async_record_audio_error
+                        if audio_pipe is not None
+                        else None
+                    ),
                     cwd=prepared.manifest.root,
                     environment=environment,
                 )
@@ -929,6 +960,8 @@ class OwletRuntimeManager:
             finally:
                 self.snapshot.stream_active = False
                 self.snapshot.stream_healthy = False
+                if self._audio_enabled and self.snapshot.audio_status == "streaming":
+                    self.snapshot.audio_status = "idle"
                 self._notify_listeners()
             if not self._stream_requested or self._shutdown:
                 break
@@ -971,6 +1004,41 @@ class OwletRuntimeManager:
                 self.snapshot.stream_last_recovery_at = now
                 _LOGGER.info("Owlet Cam stream recovered after a safe interruption")
         if self.snapshot.stream_healthy != was_healthy:
+            self._notify_listeners()
+
+    async def _async_publish_stream_audio(self, codec_id: int, frame: bytes) -> None:
+        """Mux one optional audio frame while keeping video independent."""
+        published = await self._stream_server.async_publish_audio(
+            frame, codec_id=codec_id
+        )
+        if not published:
+            if codec_id not in (0x86, 0x87):
+                await self._async_record_audio_error("audio_codec_unsupported")
+            return
+        self.snapshot.audio_frames += 1
+        self.snapshot.audio_bytes += len(frame)
+        self.snapshot.audio_codec_id = codec_id
+        self.snapshot.audio_last_frame_at = datetime.now(UTC)
+        self.snapshot.audio_last_error_code = None
+        if self.snapshot.audio_status != "streaming":
+            self.snapshot.audio_status = "streaming"
+            self._notify_listeners()
+
+    async def _async_record_audio_error(self, code: str) -> None:
+        """Record an audio-only failure without interrupting H.264 video."""
+        if not self._audio_enabled or self._shutdown:
+            return
+        changed = (
+            self.snapshot.audio_status != "unavailable"
+            or self.snapshot.audio_last_error_code != code
+        )
+        self.snapshot.audio_status = "unavailable"
+        self.snapshot.audio_last_error_code = code
+        if changed:
+            _LOGGER.warning(
+                "Owlet Cam audio became unavailable; video continues (code: %s)",
+                code,
+            )
             self._notify_listeners()
 
     def _record_stream_interruption(self, code: str) -> None:
@@ -1115,6 +1183,25 @@ class OwletRuntimeManager:
                 ),
                 "consumers": self._stream_server.client_count,
                 "binding": "127.0.0.1" if self._stream_server.url else None,
+                "audio": {
+                    "enabled": self._audio_enabled,
+                    "status": self.snapshot.audio_status,
+                    "codec": (
+                        "aac_raw"
+                        if self.snapshot.audio_codec_id == 0x86
+                        else "aac_adts"
+                        if self.snapshot.audio_codec_id == 0x87
+                        else None
+                    ),
+                    "sample_rate": 8000 if self.snapshot.audio_codec_id else None,
+                    "channels": 1 if self.snapshot.audio_codec_id else None,
+                    "frames": self.snapshot.audio_frames,
+                    "bytes": self.snapshot.audio_bytes,
+                    "last_frame_at": _optional_isoformat(
+                        self.snapshot.audio_last_frame_at
+                    ),
+                    "last_error_code": self.snapshot.audio_last_error_code,
+                },
             },
             "helper_process": process_diagnostics,
             "libraries": (
@@ -1687,6 +1774,7 @@ def _secret_json_payload(
     auth_key: str,
     av_password: str,
     output_fd: int | None = None,
+    audio_enabled: bool | None = None,
 ) -> bytearray:
     # JSON encoding creates one short-lived in-memory string, never a file,
     # environment variable, command argument, diagnostic value, or log record.
@@ -1698,6 +1786,8 @@ def _secret_json_payload(
     }
     if output_fd is not None:
         values["output_fd"] = str(output_fd)
+    if audio_enabled is not None:
+        values["audio_enabled"] = "1" if audio_enabled else "0"
     payload = json.dumps(
         values,
         separators=(",", ":"),

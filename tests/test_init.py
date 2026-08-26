@@ -28,6 +28,7 @@ from custom_components.owlet_cam.const import (
     CONF_CAMERA_DSN,
     CONF_CAMERA_NAME,
     CONF_EMAIL,
+    CONF_ENABLE_AUDIO,
     CONF_MODE,
     CONF_PASSWORD,
     CONF_REGION,
@@ -73,6 +74,7 @@ def _embedded_entry() -> MockConfigEntry:
             CONF_CAMERA_DSN: DSN,
             CONF_CAMERA_NAME: "Nursery",
         },
+        options={CONF_ENABLE_AUDIO: True},
         unique_id=DSN,
     )
 
@@ -168,11 +170,12 @@ async def test_embedded_setup_unload_and_reload(hass: HomeAssistant) -> None:
         )
         assert hass.states.get("sensor.nursery_authentication_expiry") is not None
         assert len(hass.states.async_entity_ids("camera")) == 1
+        assert entry.runtime_data.runtime_manager._audio_enabled is True
 
         assert await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
         assert len(hass.states.async_entity_ids("binary_sensor")) == 4
-        assert len(hass.states.async_entity_ids("sensor")) == 11
+        assert len(hass.states.async_entity_ids("sensor")) == 13
 
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()

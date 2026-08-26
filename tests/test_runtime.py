@@ -60,6 +60,7 @@ from custom_components.owlet_cam.runtime.process import (
     HelperProcessResult,
     OwletHelperProcessError,
     OwletHelperProcessRunner,
+    _consume_audio_frames,
 )
 from custom_components.owlet_cam.runtime.protocol import (
     OwletHelperProtocolError,
@@ -674,6 +675,126 @@ async def test_process_runner_streams_length_framed_media_and_scrubs_stdin(
     assert status == b'{"ok":true}\n'
     assert payload == bytearray(len(payload))
     assert not runner.running
+
+
+async def test_process_runner_drains_audio_from_a_separate_inherited_pipe(
+    tmp_path: Path,
+) -> None:
+    runner = OwletHelperProcessRunner()
+    payload = bytearray(b"fixture-secret\n")
+    video: list[bytes] = []
+    audio: list[tuple[int, bytes]] = []
+    read_descriptor, write_descriptor = os.pipe()
+
+    async def receive_video(frame: bytes) -> None:
+        video.append(frame)
+
+    async def receive_audio(codec_id: int, frame: bytes) -> None:
+        audio.append((codec_id, frame))
+
+    command = (
+        sys.executable,
+        "-c",
+        "import os,sys; sys.stdin.buffer.read(); "
+        "v=b'\\x00\\x00\\x00\\x01\\x65frame'; a=b'aac'; "
+        "h=len(a).to_bytes(4,'big')+b'\\x00\\x86\\x00\\x00'; "
+        "os.write(int(sys.argv[1]), h+a); "
+        "os.close(int(sys.argv[1])); "
+        "sys.stdout.buffer.write(len(v).to_bytes(4,'big')+v); "
+        "sys.stdout.buffer.flush(); sys.stderr.buffer.write(b'{\\\"ok\\\":true}\\n')",
+        str(write_descriptor),
+    )
+
+    status = await runner.async_stream(
+        command,
+        stdin=payload,
+        no_frame_timeout=5,
+        on_frame=receive_video,
+        audio_pipe=(read_descriptor, write_descriptor),
+        on_audio_frame=receive_audio,
+        cwd=tmp_path,
+    )
+
+    assert video == [b"\x00\x00\x00\x01\x65frame"]
+    assert audio == [(0x86, b"aac")]
+    assert status == b'{"ok":true}\n'
+    assert payload == bytearray(len(payload))
+    assert runner.diagnostics()["all_reaped"] is True
+
+
+async def test_malformed_audio_does_not_terminate_video_stream(tmp_path: Path) -> None:
+    runner = OwletHelperProcessRunner()
+    read_descriptor, write_descriptor = os.pipe()
+    received: list[bytes] = []
+    errors: list[str] = []
+
+    async def receive(frame: bytes) -> None:
+        received.append(frame)
+
+    async def audio_error(code: str) -> None:
+        errors.append(code)
+
+    command = (
+        sys.executable,
+        "-c",
+        "import os,sys; sys.stdin.buffer.read(); "
+        "os.write(int(sys.argv[1]), b'\\xff\\xff\\xff\\xff\\x00\\x86\\x00\\x00'); "
+        "os.close(int(sys.argv[1])); v=b'video'; "
+        "sys.stdout.buffer.write(len(v).to_bytes(4,'big')+v); "
+        "sys.stdout.buffer.flush()",
+        str(write_descriptor),
+    )
+
+    await runner.async_stream(
+        command,
+        stdin=bytearray(b"secret\n"),
+        no_frame_timeout=5,
+        on_frame=receive,
+        audio_pipe=(read_descriptor, write_descriptor),
+        on_audio_frame=AsyncMock(),
+        on_audio_error=audio_error,
+        cwd=tmp_path,
+    )
+
+    assert received == [b"video"]
+    assert errors == ["audio_invalid_frame"]
+
+
+async def test_audio_consumer_reduces_callback_and_truncation_failures() -> None:
+    callback_reader = asyncio.StreamReader()
+    callback_reader.feed_data(
+        b"\x00\x00\x00\x03\x00\x86\x00\x00aac\x00\x00\x00\x03\x00\x86\x00\x00aac"
+    )
+    callback_reader.feed_eof()
+    callback_errors: list[str] = []
+
+    async def record_callback_error(code: str) -> None:
+        callback_errors.append(code)
+
+    callback = AsyncMock(side_effect=RuntimeError("fixture failure"))
+    await _consume_audio_frames(
+        callback_reader,
+        on_audio_frame=callback,
+        on_audio_error=record_callback_error,
+    )
+
+    truncated_reader = asyncio.StreamReader()
+    truncated_reader.feed_data(b"\x00\x00\x00\x03\x00\x86\x00\x00aa")
+    truncated_reader.feed_eof()
+    truncated_errors: list[str] = []
+
+    async def record_truncated_error(code: str) -> None:
+        truncated_errors.append(code)
+
+    await _consume_audio_frames(
+        truncated_reader,
+        on_audio_frame=AsyncMock(),
+        on_audio_error=record_truncated_error,
+    )
+
+    assert callback_errors == ["audio_publish_failed"]
+    assert callback.await_count == 1
+    assert truncated_errors == ["audio_incomplete_frame"]
 
 
 async def test_process_runner_terminates_stream_after_no_frame_timeout(
@@ -1309,6 +1430,46 @@ async def test_runtime_manager_fans_out_one_live_camera_session_and_idles(
 
     await manager.async_shutdown()
     assert manager.stream_source_url is None
+
+
+async def test_runtime_manager_tracks_audio_without_changing_video_health(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path,
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+        runner=AsyncMock(spec=OwletHelperProcessRunner),
+        enable_audio=True,
+    )
+    await manager._stream_server.async_publish(
+        b"\x00\x00\x00\x01\x67sps\x00\x00\x01\x68pps\x00\x00\x00\x01\x65idr"
+    )
+
+    await manager._async_publish_stream_audio(0x86, b"raw-aac")
+
+    assert manager.snapshot.stream_healthy is False
+    assert manager._stream_server.healthy is True
+    assert manager.snapshot.audio_status == "streaming"
+    assert manager.snapshot.audio_codec_id == 0x86
+    assert manager.snapshot.audio_frames == 1
+    assert manager.diagnostics()["stream"]["audio"] == {
+        "enabled": True,
+        "status": "streaming",
+        "codec": "aac_raw",
+        "sample_rate": 8000,
+        "channels": 1,
+        "frames": 1,
+        "bytes": 7,
+        "last_frame_at": manager.snapshot.audio_last_frame_at.isoformat(),
+        "last_error_code": None,
+    }
+
+    await manager._async_publish_stream_audio(0x8A, b"unsupported")
+    assert manager.snapshot.audio_status == "unavailable"
+    assert manager.snapshot.audio_last_error_code == "audio_codec_unsupported"
+    assert manager._stream_server.healthy is True
 
 
 async def test_live_stream_requires_the_versioned_stream_helper(
