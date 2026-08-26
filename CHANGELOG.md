@@ -185,10 +185,21 @@ All notable changes are documented here. Versions follow semantic versioning.
 - Added disabled-by-default authentication-test and restart-stream entities plus
   corresponding bounded panel controls. The panel also exposes the existing
   runtime, frame and Core-local stream probes.
-- Current Milestone 7 local validation: 224 tests passed at 85.03%
+- Current Milestone 7 local validation: 228 tests passed at 85.14%
   branch-aware coverage. Ruff, mypy, JSON validation, JavaScript syntax,
-  release validation, secret scan and diff whitespace checks passed. Yellow
-  panel/upload/delete validation remains unperformed, so the gate is pending.
+  release validation, secret scan and diff whitespace checks passed.
+- Deployed the checksum-verified panel source to Yellow on Core 2026.8.3 / HAOS
+  18.2. The administrator sidebar panel rendered successfully, the persisted
+  proprietary bundle recovered without its uploaded archive, five AArch64
+  libraries and the SDK-key presence gate passed, a real 100-frame probe
+  returned 1920×1080 at 10.632 FPS, and Core-local FFprobe reported H.264
+  Baseline 1920×1080 at 15 FPS and 762.7 kbit/s.
+- A config-entry reload exposed an intermittent no-input helper race: the probe
+  could exit before asyncio drained an empty stdin write. The runner now skips
+  the write/drain when no payload exists, with a deterministic regression test;
+  the exact corrected file is checksum-installed on Yellow. Post-fix restart,
+  a real panel-selected upload, and delete/Repair recovery remain unperformed,
+  so the Milestone 7 gate is still pending.
 
 ## [0.2.0] - Unreleased
 

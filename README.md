@@ -4,7 +4,7 @@ Owlet Cam is a clean-room Home Assistant custom integration intended to expose
 Owlet cameras as native camera and room-sensor entities. It is not affiliated
 with, endorsed by, or supported by Owlet or ThroughTek.
 
-## Current status: Milestone 7 implemented locally; Yellow gate pending
+## Current status: Milestone 7 deployed to Yellow; final gate pending
 
 Version `0.2.0` implements clean-room, asynchronous Owlet cloud authentication
 and camera KMS validation. Embedded Experimental setup can validate a European
@@ -157,8 +157,13 @@ Actionable Home Assistant Repairs now track missing/incomplete applications,
 wrong architecture, missing libraries or SDK key, unsafe storage, checksum and
 runtime incompatibility, reauthentication, obsolete helpers, and repeated
 stream recovery failure. Resolved conditions remove their issue automatically.
-This implementation passes local automated validation, but the panel/upload/
-delete workflow has not yet been deployed and exercised on Yellow, so
+The panel and its bounded runtime, frame, and stream-health actions are now
+deployed and exercised on Yellow. Redacted diagnostics reported a real
+100-frame 1920×1080 probe and a Core-local H.264 Baseline stream probe while
+all helper children were reaped. A config-entry reload then exposed a fast-exit
+stdin race in no-input helpers; the regression fix is installed on Yellow and
+covered locally. Post-fix restart validation, a real panel-selected upload, and
+the confirmation-gated delete/Repair recovery cycle remain unperformed, so
 Milestone 7 is not accepted yet.
 
 ## Planned runtime modes

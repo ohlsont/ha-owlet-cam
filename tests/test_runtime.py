@@ -477,6 +477,91 @@ async def test_process_runner_applies_only_explicit_non_secret_environment(
     assert result.stdout == b"/runtime/lib64:/libraries\n"
 
 
+async def test_process_runner_does_not_drain_empty_stdin_for_fast_probe(
+    tmp_path: Path,
+) -> None:
+    """A no-input helper may exit before an empty stdin drain completes."""
+    runner = OwletHelperProcessRunner()
+    stdout = asyncio.StreamReader()
+    stderr = asyncio.StreamReader()
+    stdout.feed_eof()
+    stderr.feed_eof()
+    stdin_pipe = MagicMock()
+    stdin_pipe.drain = AsyncMock(
+        side_effect=ConnectionResetError("fast helper already exited")
+    )
+    stdin_pipe.wait_closed = AsyncMock()
+    process = SimpleNamespace(
+        stdin=stdin_pipe,
+        stdout=stdout,
+        stderr=stderr,
+        returncode=0,
+        wait=AsyncMock(return_value=0),
+    )
+
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=process)):
+        result = await runner.async_run(
+            (tmp_path / "probe",), timeout_seconds=5, cwd=tmp_path
+        )
+
+    assert result.returncode == 0
+    stdin_pipe.write.assert_not_called()
+    stdin_pipe.drain.assert_not_awaited()
+    stdin_pipe.close.assert_called_once_with()
+    stdin_pipe.wait_closed.assert_awaited_once_with()
+
+
+@pytest.mark.parametrize(
+    ("command", "timeout_seconds"),
+    [
+        ((), 1.0),
+        (("probe",), 0.0),
+    ],
+)
+async def test_process_runner_rejects_invalid_configuration(
+    command: tuple[str, ...], timeout_seconds: float
+) -> None:
+    runner = OwletHelperProcessRunner()
+
+    with pytest.raises(ValueError, match="Invalid helper process configuration"):
+        await runner.async_run(command, timeout_seconds=timeout_seconds)
+
+
+async def test_process_runner_tolerates_closed_secret_stdin(
+    tmp_path: Path,
+) -> None:
+    """A helper exit while stdin closes must not retain the secret payload."""
+    runner = OwletHelperProcessRunner()
+    secret = bytearray(b"fixture-secret")
+    stdout = asyncio.StreamReader()
+    stderr = asyncio.StreamReader()
+    stdout.feed_eof()
+    stderr.feed_eof()
+    stdin_pipe = MagicMock()
+    stdin_pipe.drain = AsyncMock()
+    stdin_pipe.wait_closed = AsyncMock(side_effect=ConnectionResetError)
+    process = SimpleNamespace(
+        stdin=stdin_pipe,
+        stdout=stdout,
+        stderr=stderr,
+        returncode=0,
+        wait=AsyncMock(return_value=0),
+    )
+
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=process)):
+        result = await runner.async_run(
+            (tmp_path / "probe",),
+            stdin=secret,
+            timeout_seconds=5,
+            cwd=tmp_path,
+        )
+
+    assert result.returncode == 0
+    assert secret == bytearray(len(secret))
+    stdin_pipe.write.assert_called_once()
+    stdin_pipe.drain.assert_awaited_once_with()
+
+
 async def test_process_runner_times_out_and_reaps_child(tmp_path: Path) -> None:
     runner = OwletHelperProcessRunner()
     command = (sys.executable, "-c", "import time; time.sleep(30)")

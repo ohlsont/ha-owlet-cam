@@ -101,8 +101,13 @@ class OwletHelperProcessRunner:
                     raise OwletHelperProcessError("Native helper pipes are unavailable")
                 stdout_task = asyncio.create_task(_read_limited(process.stdout))
                 stderr_task = asyncio.create_task(_read_limited(process.stderr))
-                process.stdin.write(stdin or b"")
-                await process.stdin.drain()
+                # One-shot probes that do not consume input can exit before
+                # asyncio finishes draining even an empty write.  Avoid that
+                # race entirely; only write and drain when the caller actually
+                # supplied a secret payload.
+                if stdin is not None:
+                    process.stdin.write(stdin)
+                    await process.stdin.drain()
                 process.stdin.close()
                 try:
                     await process.stdin.wait_closed()
