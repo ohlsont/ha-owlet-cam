@@ -21,9 +21,13 @@ All notable changes are documented here. Versions follow semantic versioning.
 ### Validation status
 
 - Python packetizer, separate-pipe supervision, malformed-audio fallback and
-  strict FFprobe parsing are covered by automated tests. Real Owlet Cam audio
-  and Yellow playback remain unverified until the 0.8.0 helper is deployed and
-  FFprobe plus a Home Assistant client receive actual audio.
+  strict FFprobe parsing are covered by automated tests. On Home Assistant
+  Yellow, a real Owlet Cam 1 supplied native ADTS AAC-LC; Core-local FFprobe
+  decoded H.264 plus 8 kHz mono AAC and counted both tracks. Browser-audibility
+  confirmation remains pending.
+- Added bounded, allowlisted FFprobe observations and stable parse error codes.
+  These exposed and corrected the camera's public `0x88` codec-label/framing
+  mismatch without retaining URLs, paths, stderr, tags, or media bytes.
 
 ## [0.7.0] - Unreleased
 

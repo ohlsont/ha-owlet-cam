@@ -39,6 +39,13 @@ definition was copied from the unlicensed reference project; the helper ABI,
 separate inherited-pipe framing, ADTS construction, MPEG-TS packetizer and
 tests were independently written in this repository.
 
+The 2026-08-26 Yellow probe added independent real-device evidence: the Owlet
+Cam 1 reported public Kalay codec ID `0x88`, while the received access units
+already carried ADTS sync and configuration. The clean-room adapter therefore
+preserves detected ADTS and LOAS framing and adds ADTS only to genuinely bare
+AAC access units. FFprobe then identified AAC-LC, 8000 Hz, mono. No audio bytes
+were stored in diagnostics or copied from a reference implementation.
+
 Milestone 1 additionally used Google's public Firebase Auth REST documentation
 to independently implement password authentication, token expiry parsing, and
 refresh behavior using the documented

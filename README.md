@@ -39,9 +39,10 @@ ThroughTek.
 | Validation status | Automated fake-bridge coverage; real bridge gate pending | Bounded real Owlet Cam 1 validation on Yellow |
 
 Embedded incoming audio is experimental in 0.8.0 and remains disabled by
-default. Its separate-pipe and AAC/MPEG-TS path has automated and synthetic
-FFmpeg coverage, but real-camera Yellow validation is still required. Two-way
-talk is not supported.
+default. Its separate-pipe and AAC/MPEG-TS path has automated, synthetic, and
+bounded real-camera Yellow FFprobe coverage. Owlet Cam 1 supplied AAC-LC in
+native ADTS framing at 8 kHz mono without audio or video transcoding. Audible
+browser playback validation is still pending. Two-way talk is not supported.
 
 ## Choose a connection mode
 
@@ -306,9 +307,10 @@ UID, AuthKey, or AV password.
   user-reported Owlet Cam 1.
 - External bridge mode has automated compatibility tests but no completed real
   bridge/media acceptance gate.
-- Embedded incoming audio is experimental and has not yet passed its real
-  Owlet Cam / Yellow playback gate. Two-way talk, lullabies, and embedded room
-  sensors are unsupported.
+- Embedded incoming audio is experimental. Real Owlet Cam 1 media passed the
+  Core-local Yellow decode probe, while audible browser playback remains to be
+  confirmed. Two-way talk, lullabies, and embedded room sensors are
+  unsupported.
 - Cloud authentication and fresh camera connection metadata remain necessary;
   the project does not claim fully offline operation.
 - Formal two-hour/overnight viewing, Companion app inside/outside LAN, physical
