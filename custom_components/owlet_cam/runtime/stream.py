@@ -148,7 +148,10 @@ class H264LoopbackServer:
             # Owlet Cam 1 reports Kalay codec 0x88 but returns bare AAC-LC
             # access units. Preserve genuine LOAS frames for other models; add
             # ADTS configuration to the observed bare Owlet access units.
-            if _is_loas(frame):
+            if _is_adts(frame):
+                access_unit = frame
+                stream_type = _TS_STREAM_AAC_ADTS
+            elif _is_loas(frame):
                 access_unit = frame
                 stream_type = _TS_STREAM_AAC_LATM
             else:

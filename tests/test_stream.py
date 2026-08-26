@@ -185,6 +185,13 @@ async def test_loopback_server_fans_out_one_gated_producer(
     assert await server.async_publish_audio(adts, codec_id=0x87)
     assert _packet_pid(await first_reader.readexactly(188)) == 0x101
     assert _packet_pid(await second_reader.readexactly(188)) == 0x101
+    assert await server.async_publish_audio(adts, codec_id=0x88)
+    for native_adts in (
+        await first_reader.readexactly(188),
+        await second_reader.readexactly(188),
+    ):
+        assert _packet_pid(native_adts) == 0x101
+        assert native_adts.count(adts) == 1
     assert await server.async_publish_audio(b"kalay-aac", codec_id=0x88)
     first_kalay_audio = await first_reader.readexactly(188)
     second_kalay_audio = await second_reader.readexactly(188)

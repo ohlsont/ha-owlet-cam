@@ -206,6 +206,7 @@ class RuntimeSnapshot:
     audio_frames: int = 0
     audio_bytes: int = 0
     audio_codec_id: int | None = None
+    audio_native_framing: str | None = None
     audio_last_frame_at: datetime | None = None
     audio_last_error_code: str | None = None
     application_status: str = "not_uploaded"
@@ -1026,6 +1027,12 @@ class OwletRuntimeManager:
         # the observed value even when unsupported so redacted diagnostics can
         # distinguish camera formats without requiring native debug logging.
         self.snapshot.audio_codec_id = codec_id
+        if len(frame) >= 2 and frame[0] == 0xFF and frame[1] & 0xF6 == 0xF0:
+            self.snapshot.audio_native_framing = "adts"
+        elif len(frame) >= 2 and frame[0] == 0x56 and frame[1] & 0xE0 == 0xE0:
+            self.snapshot.audio_native_framing = "loas"
+        else:
+            self.snapshot.audio_native_framing = "bare"
         published = await self._stream_server.async_publish_audio(
             frame, codec_id=codec_id
         )
@@ -1220,6 +1227,7 @@ class OwletRuntimeManager:
                         if self.snapshot.audio_codec_id == 0x88
                         else None
                     ),
+                    "native_framing": self.snapshot.audio_native_framing,
                     "sample_rate": (
                         8000
                         if self.snapshot.audio_codec_id in (0x86, 0x87, 0x88)
