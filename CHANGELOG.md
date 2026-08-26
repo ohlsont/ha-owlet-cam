@@ -201,9 +201,15 @@ All notable changes are documented here. Versions follow semantic versioning.
   restart automatically returned the runtime to `ready`: all five libraries
   were compatible, no safe error was present, helper accounting was started
   1/reaped 1 with zero forced kills, active Repairs were empty, and the current
-  structured Owlet log was empty. A real panel-selected upload and
-  delete/Repair recovery remain unperformed, so the Milestone 7 gate is still
-  pending.
+  structured Owlet log was empty.
+- Completed the real Yellow panel lifecycle: the confirmation-gated delete
+  removed all proprietary material and created the expected missing-application
+  Repair; the panel then accepted a user-selected 154,946,466-byte XAPK and
+  cleared the Repair. A bounded runtime probe extracted the package, deleted
+  the uploaded archive by default, restored the SDK-key presence gate and all
+  five AArch64 libraries, returned `ready`, reaped all helper children, and left
+  zero active Repairs or current Owlet system-log entries. The Milestone 7 gate
+  is accepted.
 
 ## [0.2.0] - Unreleased
 
