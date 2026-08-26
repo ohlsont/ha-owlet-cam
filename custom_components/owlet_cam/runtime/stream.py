@@ -145,10 +145,15 @@ class H264LoopbackServer:
             access_unit = frame
             stream_type = _TS_STREAM_AAC_ADTS
         elif codec_id == _CODEC_AAC_LATM:
-            # Kalay may return either complete LOAS frames or the enclosed LATM
-            # AudioMuxElement. MPEG-TS stream type 0x11 needs LOAS framing.
-            access_unit = frame if _is_loas(frame) else _loas_header(len(frame)) + frame
-            stream_type = _TS_STREAM_AAC_LATM
+            # Owlet Cam 1 reports Kalay codec 0x88 but returns bare AAC-LC
+            # access units. Preserve genuine LOAS frames for other models; add
+            # ADTS configuration to the observed bare Owlet access units.
+            if _is_loas(frame):
+                access_unit = frame
+                stream_type = _TS_STREAM_AAC_LATM
+            else:
+                access_unit = _adts_header(len(frame)) + frame
+                stream_type = _TS_STREAM_AAC_ADTS
         else:
             return False
         payload = self._muxer.mux_audio_access_unit(

@@ -1216,7 +1216,7 @@ class OwletRuntimeManager:
                         if self.snapshot.audio_codec_id == 0x86
                         else "aac_adts"
                         if self.snapshot.audio_codec_id == 0x87
-                        else "aac_latm"
+                        else "aac_kalay"
                         if self.snapshot.audio_codec_id == 0x88
                         else None
                     ),

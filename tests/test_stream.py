@@ -185,13 +185,21 @@ async def test_loopback_server_fans_out_one_gated_producer(
     assert await server.async_publish_audio(adts, codec_id=0x87)
     assert _packet_pid(await first_reader.readexactly(188)) == 0x101
     assert _packet_pid(await second_reader.readexactly(188)) == 0x101
-    assert await server.async_publish_audio(b"latm-raw", codec_id=0x88)
+    assert await server.async_publish_audio(b"kalay-aac", codec_id=0x88)
+    first_kalay_audio = await first_reader.readexactly(188)
+    second_kalay_audio = await second_reader.readexactly(188)
+    for kalay_audio in (first_kalay_audio, second_kalay_audio):
+        assert _packet_pid(kalay_audio) == 0x101
+        assert _adts_header(len(b"kalay-aac")) + b"kalay-aac" in kalay_audio
+
+    loas = _loas_header(len(b"latm")) + b"latm"
+    assert await server.async_publish_audio(loas, codec_id=0x88)
     first_latm = await first_reader.readexactly(3 * 188)
     second_latm = await second_reader.readexactly(3 * 188)
     for latm in (first_latm, second_latm):
         packets = [latm[index : index + 188] for index in range(0, len(latm), 188)]
         assert [_packet_pid(packet) for packet in packets] == [0, 0x1000, 0x101]
-        assert _loas_header(len(b"latm-raw")) + b"latm-raw" in packets[2]
+        assert loas in packets[2]
     assert not await server.async_publish_audio(b"unsupported", codec_id=0x8A)
 
     first_writer.close()

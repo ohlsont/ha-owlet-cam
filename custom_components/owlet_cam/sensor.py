@@ -341,7 +341,7 @@ class OwletCamRuntimeSensor(OwletCamRuntimeEntity, SensorEntity):
                 return {
                     0x86: "AAC-LC (raw)",
                     0x87: "AAC-LC (ADTS)",
-                    0x88: "AAC-LATM",
+                    0x88: "AAC (Kalay 0x88)",
                     0x89: "G.711 μ-law",
                     0x8A: "G.711 A-law",
                     0x8B: "ADPCM",

@@ -1489,7 +1489,7 @@ async def test_runtime_manager_tracks_audio_without_changing_video_health(
     assert manager.snapshot.audio_status == "streaming"
     assert manager.snapshot.audio_codec_id == 0x88
     assert manager.snapshot.audio_frames == 2
-    assert manager.diagnostics()["stream"]["audio"]["codec"] == "aac_latm"
+    assert manager.diagnostics()["stream"]["audio"]["codec"] == "aac_kalay"
 
 
 async def test_live_stream_requires_the_versioned_stream_helper(
