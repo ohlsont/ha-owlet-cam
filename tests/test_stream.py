@@ -13,6 +13,7 @@ from custom_components.owlet_cam.runtime.stream import (
     H264LoopbackServer,
     _adts_header,
     _annex_b_nal_types,
+    _is_loas,
     _MpegTsMuxer,
     _pat_section,
     _pmt_section,
@@ -56,6 +57,22 @@ def test_mpeg_ts_muxer_adds_raw_aac_as_adts_on_an_independent_pid() -> None:
     assert bytes.fromhex("0fe101f000") in _pmt_section(audio_enabled=True)
 
 
+def test_mpeg_ts_muxer_updates_the_pmt_for_latm_audio() -> None:
+    muxer = _MpegTsMuxer(audio_enabled=True)
+    video = muxer.mux_access_unit(SPS + PPS + IDR, random_access=True)
+    loas = b"\x56\xe0\x04latm"
+    audio = muxer.mux_audio_access_unit(loas, stream_type=0x11)
+
+    packets = [audio[index : index + 188] for index in range(0, len(audio), 188)]
+    assert [_packet_pid(packet) for packet in packets[:2]] == [0, 0x1000]
+    assert all(_packet_pid(packet) == 0x101 for packet in packets[2:])
+    assert bytes.fromhex("11e101f000") in packets[1]
+    assert loas in b"".join(packets[2:])
+    assert bytes.fromhex("0fe101f000") in video
+    with pytest.raises(ValueError, match="audio stream type"):
+        muxer.mux_audio_access_unit(loas, stream_type=0x12)
+
+
 def test_adts_header_describes_aac_lc_8khz_mono() -> None:
     header = _adts_header(100)
 
@@ -66,6 +83,12 @@ def test_adts_header_describes_aac_lc_8khz_mono() -> None:
     assert ((header[3] & 0x03) << 11) | (header[4] << 3) | (header[5] >> 5) == 107
     with pytest.raises(ValueError, match="AAC access unit size"):
         _adts_header(0)
+
+
+def test_detects_loas_latm_syncword() -> None:
+    assert _is_loas(b"\x56\xe0\x01x")
+    assert not _is_loas(b"\x56\xc0\x01x")
+    assert not _is_loas(b"\x56\xe0")
 
 
 async def test_loopback_server_discards_old_gop_before_a_new_producer(
@@ -153,6 +176,9 @@ async def test_loopback_server_fans_out_one_gated_producer(
 
     adts = _adts_header(4) + b"aac!"
     assert await server.async_publish_audio(adts, codec_id=0x87)
+    assert _packet_pid(await first_reader.readexactly(188)) == 0x101
+    assert _packet_pid(await second_reader.readexactly(188)) == 0x101
+    assert await server.async_publish_audio(b"latm-raw", codec_id=0x88)
     assert _packet_pid(await first_reader.readexactly(188)) == 0x101
     assert _packet_pid(await second_reader.readexactly(188)) == 0x101
     assert not await server.async_publish_audio(b"unsupported", codec_id=0x8A)

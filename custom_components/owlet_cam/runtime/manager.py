@@ -1016,7 +1016,7 @@ class OwletRuntimeManager:
             frame, codec_id=codec_id
         )
         if not published:
-            if codec_id not in (0x86, 0x87):
+            if codec_id not in (0x86, 0x87, 0x88):
                 await self._async_record_audio_error("audio_codec_unsupported")
             return
         self.snapshot.audio_frames += 1
@@ -1199,13 +1199,19 @@ class OwletRuntimeManager:
                         if self.snapshot.audio_codec_id == 0x86
                         else "aac_adts"
                         if self.snapshot.audio_codec_id == 0x87
+                        else "aac_latm"
+                        if self.snapshot.audio_codec_id == 0x88
                         else None
                     ),
                     "sample_rate": (
-                        8000 if self.snapshot.audio_codec_id in (0x86, 0x87) else None
+                        8000
+                        if self.snapshot.audio_codec_id in (0x86, 0x87, 0x88)
+                        else None
                     ),
                     "channels": (
-                        1 if self.snapshot.audio_codec_id in (0x86, 0x87) else None
+                        1
+                        if self.snapshot.audio_codec_id in (0x86, 0x87, 0x88)
+                        else None
                     ),
                     "frames": self.snapshot.audio_frames,
                     "bytes": self.snapshot.audio_bytes,

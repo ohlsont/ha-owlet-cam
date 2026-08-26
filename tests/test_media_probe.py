@@ -49,13 +49,14 @@ def test_media_probe_parses_only_safe_bounded_facts() -> None:
     assert result.audio_codec is None
 
 
-def test_media_probe_confirms_enabled_aac_audio() -> None:
+@pytest.mark.parametrize("codec", ["aac", "aac_latm"])
+def test_media_probe_confirms_enabled_aac_audio(codec: str) -> None:
     document = json.loads(_payload())
     document["streams"][0]["codec_type"] = "video"
     document["streams"].append(
         {
             "codec_type": "audio",
-            "codec_name": "aac",
+            "codec_name": codec,
             "sample_rate": "8000",
             "channels": 1,
         }
@@ -69,7 +70,7 @@ def test_media_probe_confirms_enabled_aac_audio() -> None:
         expect_audio=True,
     )
 
-    assert result.audio_codec == "aac"
+    assert result.audio_codec == codec
     assert result.audio_sample_rate == 8000
     assert result.audio_channels == 1
 

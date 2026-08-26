@@ -25,6 +25,9 @@ _AAC_CHANNELS: Final = 1
 _AAC_SAMPLES_PER_FRAME: Final = 1_024
 _CODEC_AAC_RAW: Final = 0x86
 _CODEC_AAC_ADTS: Final = 0x87
+_CODEC_AAC_LATM: Final = 0x88
+_TS_STREAM_AAC_ADTS: Final = 0x0F
+_TS_STREAM_AAC_LATM: Final = 0x11
 _STREAM_PATH: Final = "/owlet-cam.ts"
 
 type AsyncCallback = Callable[[], Awaitable[None]]
@@ -137,11 +140,24 @@ class H264LoopbackServer:
             return False
         if codec_id == _CODEC_AAC_RAW:
             access_unit = _adts_header(len(frame)) + frame
+            stream_type = _TS_STREAM_AAC_ADTS
         elif codec_id == _CODEC_AAC_ADTS and _is_adts(frame):
             access_unit = frame
+            stream_type = _TS_STREAM_AAC_ADTS
+        elif codec_id == _CODEC_AAC_LATM:
+            if _is_loas(frame):
+                access_unit = frame
+                stream_type = _TS_STREAM_AAC_LATM
+            else:
+                # Some Kalay camera firmware labels raw AAC access units as
+                # LATM. ADTS-wrap only frames that do not carry a LOAS syncword.
+                access_unit = _adts_header(len(frame)) + frame
+                stream_type = _TS_STREAM_AAC_ADTS
         else:
             return False
-        payload = self._muxer.mux_audio_access_unit(access_unit)
+        payload = self._muxer.mux_audio_access_unit(
+            access_unit, stream_type=stream_type
+        )
         for queue, ready in tuple(self._subscribers.items()):
             if not ready:
                 continue
@@ -289,6 +305,8 @@ class _MpegTsMuxer:
         self._started_at: float | None = None
         self._last_pts = 0
         self._last_audio_pts: int | None = None
+        self._audio_stream_type = _TS_STREAM_AAC_ADTS
+        self._audio_tables_emitted = False
 
     def reset(self) -> None:
         """Reset timestamps and continuity counters for a new producer."""
@@ -296,6 +314,8 @@ class _MpegTsMuxer:
         self._started_at = None
         self._last_pts = 0
         self._last_audio_pts = None
+        self._audio_stream_type = _TS_STREAM_AAC_ADTS
+        self._audio_tables_emitted = False
 
     def mux_access_unit(self, access_unit: bytes, *, random_access: bool) -> bytes:
         """Return PAT, PMT, and one timestamped H.264 PES as TS packets."""
@@ -307,8 +327,13 @@ class _MpegTsMuxer:
         tables = b""
         if random_access:
             tables = self._psi_packet(_PAT_PID, _pat_section()) + self._psi_packet(
-                _PMT_PID, _pmt_section(audio_enabled=self._audio_enabled)
+                _PMT_PID,
+                _pmt_section(
+                    audio_enabled=self._audio_enabled,
+                    audio_stream_type=self._audio_stream_type,
+                ),
             )
+            self._audio_tables_emitted = self._audio_enabled
         pes = _pes_packet(access_unit, pts, stream_id=0xE0, bounded_length=False)
         return tables + self._packetize_pes(
             pes,
@@ -317,10 +342,28 @@ class _MpegTsMuxer:
             random_access=random_access,
         )
 
-    def mux_audio_access_unit(self, access_unit: bytes) -> bytes:
-        """Return one timestamped ADTS AAC PES as fixed-size TS packets."""
+    def mux_audio_access_unit(
+        self,
+        access_unit: bytes,
+        *,
+        stream_type: int = _TS_STREAM_AAC_ADTS,
+    ) -> bytes:
+        """Return one timestamped AAC PES as fixed-size TS packets."""
         if not self._audio_enabled:
             raise ValueError("Audio is disabled")
+        if stream_type not in (_TS_STREAM_AAC_ADTS, _TS_STREAM_AAC_LATM):
+            raise ValueError("Unsupported MPEG-TS audio stream type")
+        tables = b""
+        if stream_type != self._audio_stream_type or not self._audio_tables_emitted:
+            self._audio_stream_type = stream_type
+            tables = self._psi_packet(_PAT_PID, _pat_section()) + self._psi_packet(
+                _PMT_PID,
+                _pmt_section(
+                    audio_enabled=True,
+                    audio_stream_type=stream_type,
+                ),
+            )
+            self._audio_tables_emitted = True
         now = time.monotonic()
         if self._started_at is None:
             self._started_at = now
@@ -333,7 +376,7 @@ class _MpegTsMuxer:
         )
         self._last_audio_pts = pts
         pes = _pes_packet(access_unit, pts, stream_id=0xC0, bounded_length=True)
-        return self._packetize_pes(
+        return tables + self._packetize_pes(
             pes,
             pid=_AUDIO_PID,
             pcr=None,
@@ -433,10 +476,16 @@ def _pat_section() -> bytes:
     return section + _mpeg_crc32(section).to_bytes(4, "big")
 
 
-def _pmt_section(*, audio_enabled: bool = False) -> bytes:
+def _pmt_section(
+    *,
+    audio_enabled: bool = False,
+    audio_stream_type: int = _TS_STREAM_AAC_ADTS,
+) -> bytes:
     streams = bytes.fromhex("1be100f000")
     if audio_enabled:
-        streams += bytes.fromhex("0fe101f000")
+        if audio_stream_type not in (_TS_STREAM_AAC_ADTS, _TS_STREAM_AAC_LATM):
+            raise ValueError("Unsupported MPEG-TS audio stream type")
+        streams += bytes((audio_stream_type,)) + bytes.fromhex("e101f000")
     section_length = 9 + len(streams) + 4
     section = (
         bytes((0x02, 0xB0 | ((section_length >> 8) & 0x0F), section_length & 0xFF))
@@ -501,6 +550,11 @@ def _adts_header(payload_size: int) -> bytes:
 
 def _is_adts(frame: bytes) -> bool:
     return len(frame) >= 7 and frame[0] == 0xFF and frame[1] & 0xF6 == 0xF0
+
+
+def _is_loas(frame: bytes) -> bool:
+    """Return whether a frame starts with the 11-bit LOAS syncword 0x2B7."""
+    return len(frame) >= 3 and frame[0] == 0x56 and frame[1] & 0xE0 == 0xE0
 
 
 def _encode_pts(pts: int) -> bytes:

@@ -164,7 +164,7 @@ def parse_media_probe_output(
         audio_codec_value = audio.get("codec_name")
         sample_rate_value = audio.get("sample_rate")
         channels_value = audio.get("channels")
-        if audio_codec_value != "aac":
+        if audio_codec_value not in ("aac", "aac_latm"):
             raise MediaProbeError("The Core-local audio stream is not AAC")
         if isinstance(sample_rate_value, str) and sample_rate_value.isdecimal():
             sample_rate_value = int(sample_rate_value)

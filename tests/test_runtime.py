@@ -1485,6 +1485,12 @@ async def test_runtime_manager_tracks_audio_without_changing_video_health(
     }
     assert manager._stream_server.healthy is True
 
+    await manager._async_publish_stream_audio(0x88, b"latm-labelled-raw-aac")
+    assert manager.snapshot.audio_status == "streaming"
+    assert manager.snapshot.audio_codec_id == 0x88
+    assert manager.snapshot.audio_frames == 2
+    assert manager.diagnostics()["stream"]["audio"]["codec"] == "aac_latm"
+
 
 async def test_live_stream_requires_the_versioned_stream_helper(
     hass: HomeAssistant, tmp_path: Path
