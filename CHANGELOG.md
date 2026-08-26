@@ -18,6 +18,10 @@ All notable changes are documented here. Versions follow semantic versioning.
 - A deterministic desktop runtime preparer that minimizes a user-owned Owlet
   application into a strict `.owletcam` package, with existing-archive, adb and
   optional token-file-only apkeep acquisition paths.
+- Native Home Assistant `.owletcam` file-selection during embedded setup and an
+  optional replacement/deletion step during Reconfigure. The permanent custom
+  runtime sidebar panel and its private HTTP API were removed; runtime actions
+  remain disabled-by-default diagnostic device buttons.
 
 ### Security
 

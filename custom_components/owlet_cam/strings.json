@@ -10,6 +10,7 @@
     },
     "error": {
       "camera_not_found": "This camera was not found on the authenticated Owlet account. Check the DSN and account.",
+      "choose_one_runtime_action": "Choose either a replacement runtime package or deletion, not both.",
       "cannot_connect_bridge": "Could not connect to the Owlet bridge. Check its URL, network access, and TLS setting.",
       "cannot_connect": "Could not connect to the Owlet service. Please try again.",
       "invalid_bridge_auth": "The Owlet bridge rejected the API credentials.",
@@ -19,9 +20,12 @@
       "invalid_dsn_zero": "The DSN must begin with the letter O, not the digit 0.",
       "invalid_email": "Enter a valid email address.",
       "invalid_name": "Enter a camera name.",
+      "deletion_confirmation_required": "Confirm deletion to permanently remove the user-supplied application files and SDK material.",
       "no_cameras": "The bridge did not return any configured cameras.",
       "no_stream": "The bridge did not provide a usable RTSP source for this camera.",
       "rate_limited": "Owlet is temporarily rate limiting requests. Please wait and try again.",
+      "invalid_runtime_package": "The selected runtime package is invalid, unsupported, empty, or too large. Prepare a new .owletcam package and try again.",
+      "runtime_package_unavailable": "Home Assistant could not read or store the selected runtime package. Select it again and retry.",
       "unsupported_bridge": "The service does not expose a compatible Owlet-To-Rtsp API.",
       "unsupported_region": "This Owlet region is not supported."
     },
@@ -46,6 +50,16 @@
         "data_description": {
           "camera_dsn": "Use the serial shown in the Owlet app or printed on the camera. The integration discovers any different internal KMS identifier without displaying it.",
           "password": "Stored in Home Assistant config-entry data and never written to runtime files."
+        }
+      },
+      "embedded_runtime": {
+        "title": "Add the embedded runtime package",
+        "description": "Upload the compact .owletcam package prepared from your own installed Owlet application. The file is stored privately; no native code is started during setup.",
+        "data": {
+          "runtime_package": "Owlet runtime package"
+        },
+        "data_description": {
+          "runtime_package": "Create this on a computer with owlet-cam-prepare.pyz using an existing archive, adb, or apkeep. Only .owletcam packages are accepted here."
         }
       },
       "external": {
@@ -92,6 +106,21 @@
           "email": "Owlet email",
           "password": "Owlet password",
           "region": "Region"
+        }
+      },
+      "reconfigure_runtime": {
+        "title": "Embedded runtime package",
+        "description": "Keep the current private runtime files, or select a replacement compact .owletcam package. The entry reloads exactly once after this step.",
+        "data": {
+          "runtime_package": "Optional replacement runtime package",
+          "delete_proprietary_files": "Delete all stored proprietary files"
+        }
+      },
+      "confirm_delete_runtime": {
+        "title": "Confirm proprietary-file deletion",
+        "description": "This permanently deletes uploaded packages, extracted Owlet/ThroughTek libraries, and stored SDK material. The verified open-source helper remains installed. Embedded video will stop until a new package is uploaded and validated.",
+        "data": {
+          "confirm_delete_proprietary_files": "I understand; permanently delete the proprietary files"
         }
       },
       "reconfigure_bridge": {
@@ -151,14 +180,14 @@
     }
   },
   "issues": {
-    "missing_apk": {"title": "Owlet runtime package is required", "description": "Prepare your personal .owletcam runtime package on a computer, then upload it in the Owlet Cam Runtime panel. Complete APK, APKM, XAPK, and ZIP packages remain available as a development fallback."},
+    "missing_apk": {"title": "Owlet runtime package is required", "description": "Open the Owlet Cam integration, choose Reconfigure, and upload a compact .owletcam package prepared from your own installed application."},
     "missing_arm64_split": {"title": "ARM64 Owlet application split is missing", "description": "Upload a package that includes the arm64-v8a application split."},
     "missing_library": {"title": "A required native library is missing", "description": "Prepare a new .owletcam package from a complete current Owlet application and run the runtime probe again."},
     "missing_sdk_key": {"title": "Owlet SDK key was not found", "description": "The supplied runtime package does not contain the required user-owned SDK material. Prepare it again from a complete current application."},
     "unsupported_architecture": {"title": "Embedded Owlet runtime is unsupported on this architecture", "description": "Embedded mode currently requires AArch64. Use external bridge mode on this machine."},
     "library_incompatible": {"title": "Owlet native libraries are incompatible", "description": "The supplied libraries failed an ARM64 ELF or symbol compatibility gate. External bridge mode remains available."},
     "invalid_apk": {"title": "Owlet runtime package is invalid", "description": "The uploaded package failed archive safety, integrity, architecture, or content validation. Prepare a new package from an unmodified application."},
-    "invalid_extracted_files": {"title": "Stored Owlet application files are invalid", "description": "Delete proprietary files in the Owlet Cam Runtime panel, upload the package again, and rerun the runtime probe."},
+    "invalid_extracted_files": {"title": "Stored Owlet application files are invalid", "description": "Open the Owlet Cam integration, choose Reconfigure, upload a replacement .owletcam package, and rerun the runtime probe."},
     "invalid_runtime_manifest": {"title": "Owlet helper runtime verification failed", "description": "The open-source helper runtime failed its manifest or checksum gate. Reinstall the matching integration release."},
     "invalid_runtime_storage": {"title": "Owlet runtime storage is unsafe", "description": "An integration-owned runtime directory is missing, replaced, or symlinked. Restore the Owlet Cam userfiles directory and rerun validation."},
     "runtime_checksum_mismatch": {"title": "Owlet helper checksum verification failed", "description": "The open-source helper does not match its pinned checksum. Reinstall the matching integration release; it will not be executed."},
@@ -167,7 +196,7 @@
     "obsolete_helper_runtime": {"title": "Owlet helper runtime is obsolete", "description": "Install the helper runtime pinned to this integration release before continuing embedded operation."},
     "runtime_state_write_failed": {"title": "Owlet runtime state could not be saved", "description": "Check available storage and filesystem health, then rerun the runtime probe."},
     "reauthentication_required": {"title": "Owlet reauthentication is required", "description": "Open the Owlet Cam integration and complete its reauthentication flow."},
-    "stream_recovery_failed": {"title": "Owlet stream recovery repeatedly failed", "description": "Review redacted diagnostics and system logs, then use Restart stream in the Owlet Cam Runtime panel."}
+    "stream_recovery_failed": {"title": "Owlet stream recovery repeatedly failed", "description": "Review redacted diagnostics and system logs, then enable and press the disabled-by-default Restart embedded stream diagnostic button on the camera device."}
   },
   "selector": {
     "mode": {

@@ -1,10 +1,9 @@
 {
   "domain": "owlet_cam",
   "name": "Owlet Cam",
-  "after_dependencies": ["frontend", "panel_custom"],
   "codeowners": ["@ohlsont"],
   "config_flow": true,
-  "dependencies": ["ffmpeg", "http"],
+  "dependencies": ["ffmpeg", "file_upload"],
   "documentation": "https://github.com/ohlsont/ha-owlet-cam",
   "integration_type": "device",
   "iot_class": "cloud_polling",

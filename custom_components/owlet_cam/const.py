@@ -45,12 +45,15 @@ CONF_IDLE_TIMEOUT: Final = "idle_disconnect_timeout"
 CONF_STREAM_QUALITY: Final = "stream_quality"
 CONF_ENABLE_AUDIO: Final = "enable_audio"
 CONF_DEBUG_LOGGING: Final = "debug_logging"
+CONF_DELETE_PROPRIETARY_FILES: Final = "delete_proprietary_files"
+CONF_CONFIRM_DELETE: Final = "confirm_delete_proprietary_files"
 CONF_RUNTIME_CHANNEL: Final = "runtime_channel"
 CONF_RECONNECT_BACKOFF: Final = "reconnect_backoff"
 CONF_NO_FRAME_TIMEOUT: Final = "no_frame_timeout"
 CONF_PREFER_DIRECT_P2P: Final = "prefer_direct_p2p"
 CONF_EXPERIMENTAL_LOCAL_SENSORS: Final = "experimental_local_sensors"
 CONF_RETAIN_APPLICATION: Final = "retain_uploaded_application"
+CONF_RUNTIME_PACKAGE: Final = "runtime_package"
 
 DEFAULT_UPDATE_INTERVAL: Final = 300
 DEFAULT_KEEP_WARM: Final = False
@@ -67,9 +70,6 @@ DEFAULT_RETAIN_APPLICATION: Final = False
 DEFAULT_COORDINATOR_INTERVAL: Final = timedelta(seconds=DEFAULT_UPDATE_INTERVAL)
 DEFAULT_VERIFY_TLS: Final = True
 DEFAULT_BRIDGE_TIMEOUT: Final = 10
-
-PANEL_URL_PATH: Final = "owlet-cam-runtime"
-STATIC_URL_PATH: Final = "/owlet_cam_static"
 
 STATUS_READY: Final = "ready"
 

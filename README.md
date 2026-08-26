@@ -150,12 +150,14 @@ coexistence, physical-outage and additional Yellow-reboot checks. Milestone 6
 is accepted under that revised validation scope; those checks remain listed as
 unperformed and are not implied to have passed.
 
-Milestone 7 adds an administrator-only **Owlet Cam Runtime** sidebar panel. It
-streams APK/APKM/XAPK/ZIP uploads directly to a generated mode-0600 file under
-`userfiles/uploads`, shows upload progress, exposes only redacted runtime facts,
-and provides bounded authentication, runtime, frame, stream-health and restart
-controls. The default behavior deletes the uploaded archive after successful
-extraction; a grouped embedded option can retain it. The extracted ARM64
+Milestone 7 originally validated a separate administrator runtime panel. The
+current configuration removes that permanent sidebar item: embedded setup now
+uses Home Assistant's native file selector to accept a compact `.owletcam`
+package, and Reconfigure can replace it or explicitly delete all proprietary
+material. Bounded authentication, runtime, frame, stream-health and restart
+controls remain disabled-by-default diagnostic entities on the camera device.
+The default behavior deletes the uploaded package after successful extraction;
+a grouped embedded option can retain it. The extracted ARM64
 libraries and SDK key remain private so automatic post-restart validation can
 continue without asking for the archive again. A confirmation-gated action
 deletes all uploaded applications, extracted proprietary libraries and stored
@@ -165,8 +167,8 @@ Actionable Home Assistant Repairs now track missing/incomplete applications,
 wrong architecture, missing libraries or SDK key, unsafe storage, checksum and
 runtime incompatibility, reauthentication, obsolete helpers, and repeated
 stream recovery failure. Resolved conditions remove their issue automatically.
-The panel and its bounded runtime, frame, and stream-health actions are now
-deployed and exercised on Yellow. Redacted diagnostics reported a real
+The former panel and its bounded runtime, frame, and stream-health actions were
+deployed and exercised on Yellow before the sidebar was removed. Redacted diagnostics reported a real
 100-frame 1920×1080 probe and a Core-local H.264 Baseline stream probe while
 all helper children were reaped. A config-entry reload then exposed a fast-exit
 stdin race in no-input helpers; the regression fix is installed on Yellow and
@@ -197,7 +199,9 @@ The minimum Home Assistant version is `2024.11.0`. Typed
 `ConfigEntry.runtime_data` and reconfigure flows existed earlier, but 2024.11 is
 the first release containing every reauth/reconfigure helper used by this
 implementation, including `_get_reauth_entry`, `_get_reconfigure_entry`, and
-the unique-ID mismatch guard.
+the unique-ID mismatch guard. That release also provides the native
+`FileSelector` and `file_upload.process_uploaded_file` APIs used by embedded
+setup; no custom upload frontend is required.
 
 The primary target is Home Assistant Yellow running Home Assistant OS on
 AArch64. Cloud/KMS, the corrected native runtime gate, repeated H.264 frame
@@ -213,9 +217,10 @@ checks have passed on that target. HACS installation remains unperformed.
 3. Download **Owlet Cam** and restart Home Assistant.
 4. Add **Owlet Cam** from Settings → Devices & services. Choose **External
    bridge** and enter its HTTP(S) control-panel URL, or choose **Embedded
-   experimental** and enter the Owlet account, region, camera serial, and camera
-   name. The serial shown in Dream is accepted even when Owlet uses a different
-   internal KMS identifier.
+   experimental**, enter the Owlet account, region, camera serial, and camera
+   name, then select your prepared `.owletcam` package in the native setup file
+   picker. The serial shown in Dream is accepted even when Owlet uses a
+   different internal KMS identifier.
 
 The temporary Milestone 0 lifecycle mode remains hidden from ordinary setup and
 is available only when Core starts with `OWLET_CAM_DEV_MODE=1`.
@@ -261,10 +266,13 @@ An existing APK/APKM/XAPK can also be minimized without downloading anything:
 python3 owlet-cam-prepare.pyz archive dream.xapk owlet.owletcam
 ```
 
-Upload `owlet.owletcam` in the administrator-only **Owlet Cam Runtime** panel.
-The integration independently verifies the fixed package schema, hashes, SDK
-key shape, AArch64 ELF structure and required symbols, then deletes the upload
-by default. Direct full-application upload remains a development fallback.
+Select `owlet.owletcam` in the **Embedded runtime package** step during initial
+setup. To replace it later, open Settings → Devices & services → Owlet Cam,
+choose **Reconfigure**, and use the optional replacement-package field. The
+integration independently verifies the fixed package schema, hashes, SDK-key
+shape, AArch64 ELF structure and required symbols, then deletes the upload by
+default. The setup UI intentionally accepts only the compact `.owletcam` form;
+full-application archives remain a local development input to the preparer.
 
 ## Configuration and screenshots
 
@@ -272,9 +280,11 @@ Configuration, reauthentication, reconfiguration, and grouped general,
 external and embedded options are implemented in the UI. Defaults favor
 stability and coexistence:
 keep-warm, audio, direct-P2P preference, and experimental local sensors are all
-off. Retaining the uploaded runtime package is also off by default. Administrators
-manage user-supplied runtime files and native probes from the **Owlet Cam
-Runtime** sidebar panel. Real Yellow UI video was visually verified, but no
+off. Retaining the uploaded runtime package is also off by default.
+Administrators replace or delete user-supplied runtime files through
+**Reconfigure**. Native probes and stream restart remain disabled-by-default
+diagnostic button entities on the Owlet Cam device. No separate Owlet sidebar
+item is registered. Real Yellow UI video was visually verified, but no
 screenshot containing the user's room is committed to this repository.
 
 ## Privacy and security
@@ -283,8 +293,9 @@ Account email and password live in Home Assistant config-entry data. Short-lived
 Firebase and KMS camera credentials are kept only in memory. User-supplied
 libraries and the extracted SDK key are private mode-0500/mode-0600 files under
 `custom_components/owlet_cam/userfiles/`, which HACS preserves but Git and
-release checks exclude. The authenticated panel can delete all proprietary
-material. See [SECURITY.md](SECURITY.md).
+release checks exclude. The Reconfigure flow requires a separate explicit
+confirmation before deleting all proprietary material. See
+[SECURITY.md](SECURITY.md).
 
 ## Known limitations
 
@@ -348,10 +359,12 @@ material. See [SECURITY.md](SECURITY.md).
 - Authentication errors can be corrected from the integration's reauthenticate
   action without creating a duplicate entry.
 - Application and native-runtime problems appear as actionable Home Assistant
-  Repairs. Open **Owlet Cam Runtime** as an administrator to upload a replacement
-  package, rerun a bounded probe, restart the stream, or delete proprietary
-  files. Upload filenames are ignored; supported formats are APK, APKM, XAPK
-  and ZIP up to 512 MiB.
+  Repairs. Use the integration's **Reconfigure** action to upload a replacement
+  compact `.owletcam` package or enter the separate confirmation step that
+  deletes proprietary files. Enable the relevant disabled-by-default diagnostic
+  button on the camera device to rerun a bounded probe or restart the stream.
+  Upload filenames are ignored; the native setup picker accepts `.owletcam`
+  files up to Home Assistant's 100 MiB file-upload limit.
 - The cloud probe requires an Owlet email/password login. If the account was
   created with Apple or Google sign-in, first verify that a typed Owlet password
   works in the official app; an active app session alone is not evidence that

@@ -84,6 +84,58 @@ async def async_store_upload(
         await hass.async_add_executor_job(temporary.unlink, True)
 
 
+def store_uploaded_path(source: Path, uploads: Path) -> StoredUpload:
+    """Copy a Home Assistant file-selector upload into private runtime storage.
+
+    This synchronous function is intended to run in Home Assistant's executor.
+    The source is owned and removed by ``file_upload.process_uploaded_file``.
+    """
+    try:
+        source_stat = source.lstat()
+    except OSError as err:
+        raise OwletUploadError(
+            "upload_unavailable", "Uploaded runtime package is unavailable"
+        ) from err
+    if source.is_symlink() or not source.is_file():
+        raise OwletUploadError(
+            "unsafe_upload", "Uploaded runtime package is not a regular file"
+        )
+    suffix = source.suffix.lower()
+    if suffix not in SUPPORTED_ARCHIVE_SUFFIXES:
+        raise OwletUploadError("unsupported_archive", "Unsupported archive type")
+    if source_stat.st_size <= 0 or source_stat.st_size > MAXIMUM_UPLOAD_SIZE:
+        raise OwletUploadError("upload_too_large", "Upload exceeds the size limit")
+
+    descriptor, temporary = _open_private_temporary(uploads, suffix)
+    digest = hashlib.sha256()
+    written = 0
+    try:
+        with source.open("rb") as source_file:
+            while chunk := source_file.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAXIMUM_UPLOAD_SIZE:
+                    raise OwletUploadError(
+                        "upload_too_large", "Upload exceeds the size limit"
+                    )
+                digest.update(chunk)
+                _write_all(descriptor, chunk)
+        if written == 0:
+            raise OwletUploadError("empty_upload", "Runtime package is empty")
+        sha256 = digest.hexdigest()
+        _finish_upload(
+            descriptor,
+            temporary,
+            uploads / f"application-{sha256[:16]}{suffix}",
+        )
+        os.close(descriptor)
+        descriptor = -1
+        return StoredUpload(size=written, sha256=sha256)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+
+
 def _open_private_temporary(directory: Path, suffix: str) -> tuple[int, Path]:
     directory.mkdir(parents=True, mode=0o700, exist_ok=True)
     if directory.is_symlink() or not directory.is_dir():

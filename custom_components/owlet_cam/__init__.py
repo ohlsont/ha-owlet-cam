@@ -4,10 +4,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from homeassistant.components import frontend, panel_custom
-from homeassistant.components.http import StaticPathConfig
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -44,17 +41,10 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL,
     MODE_EMBEDDED,
     MODE_EXTERNAL,
-    PANEL_URL_PATH,
     PLATFORMS,
-    STATIC_URL_PATH,
 )
 from .coordinator import OwletCamCoordinator
 from .data import OwletCamConfigEntry, OwletCamRuntimeData
-from .http import (
-    OwletRuntimeActionView,
-    OwletRuntimeApplicationView,
-    OwletRuntimeStatusView,
-)
 from .repairs import async_remove_runtime_issues, async_sync_runtime_issues
 from .runtime.manager import OwletRuntimeManager
 
@@ -62,46 +52,8 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema("owlet_cam")
 
 
 async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
-    """Register the authenticated runtime panel and same-origin API once."""
-    frontend_path = Path(__file__).parent / "frontend"
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(STATIC_URL_PATH, str(frontend_path), cache_headers=False)]
-    )
-    hass.http.register_view(OwletRuntimeStatusView)
-    hass.http.register_view(OwletRuntimeApplicationView)
-    hass.http.register_view(OwletRuntimeActionView)
-    if "frontend" in hass.config.components:
-        await _async_register_runtime_panel(hass)
-    else:
-
-        @callback
-        def async_register_after_start(_event: Event[Any]) -> None:
-            if "frontend" in hass.config.components:
-                hass.async_create_task(
-                    _async_register_runtime_panel(hass),
-                    "Register Owlet Cam runtime panel",
-                )
-
-        hass.bus.async_listen_once(
-            EVENT_HOMEASSISTANT_STARTED, async_register_after_start
-        )
+    """Set up config-entry-only integration services."""
     return True
-
-
-async def _async_register_runtime_panel(hass: HomeAssistant) -> None:
-    """Register the admin-only panel when Home Assistant frontend is available."""
-    if frontend.async_panel_exists(hass, PANEL_URL_PATH):
-        return
-    await panel_custom.async_register_panel(
-        hass,
-        frontend_url_path=PANEL_URL_PATH,
-        webcomponent_name="owlet-cam-runtime-panel",
-        sidebar_title="Owlet Cam Runtime",
-        sidebar_icon="mdi:cctv",
-        module_url=f"{STATIC_URL_PATH}/owlet-cam-panel.js?v=0.7.0",
-        require_admin=True,
-        config_panel_domain="owlet_cam",
-    )
 
 
 async def async_setup_entry(

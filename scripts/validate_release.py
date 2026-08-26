@@ -27,7 +27,6 @@ def main() -> int:
     hacs = json.loads((ROOT / "hacs.json").read_text())
     pyproject = (ROOT / "pyproject.toml").read_text()
     constants = (INTEGRATION / "const.py").read_text()
-    integration_init = (INTEGRATION / "__init__.py").read_text()
     changelog = (ROOT / "CHANGELOG.md").read_text()
     release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
     strings = json.loads((INTEGRATION / "strings.json").read_text())
@@ -54,8 +53,8 @@ def main() -> int:
         raise SystemExit("manifest and pyproject versions differ")
     if f'INTEGRATION_VERSION: Final = "{manifest["version"]}"' not in constants:
         raise SystemExit("manifest and integration diagnostic versions differ")
-    if f"owlet-cam-panel.js?v={manifest['version']}" not in integration_init:
-        raise SystemExit("frontend cache version does not match the manifest")
+    if (INTEGRATION / "http.py").exists() or any((INTEGRATION / "frontend").glob("*")):
+        raise SystemExit("obsolete custom runtime panel/API is present")
     if f"## [{manifest['version']}]" not in changelog:
         raise SystemExit("CHANGELOG.md has no section for the manifest version")
     if strings != english:

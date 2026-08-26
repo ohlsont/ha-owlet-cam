@@ -29,6 +29,8 @@ def main() -> int:
     """Scan repository material without printing detected secret bytes."""
     failures: list[str] = []
     for path in tracked_files():
+        if not path.is_file():
+            continue
         if path.suffix.lower() in PROHIBITED_SUFFIXES:
             failures.append(f"prohibited file type: {path.relative_to(ROOT)}")
             continue

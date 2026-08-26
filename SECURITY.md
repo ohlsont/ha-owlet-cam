@@ -22,9 +22,10 @@ This independent project is not affiliated with Owlet or ThroughTek.
   normal ELF/symbol gates after upload.
 - Proprietary files are user-supplied and stored beneath
   `custom_components/owlet_cam/userfiles/` with restrictive permissions. The
-  authenticated admin panel streams uploads to generated mode-0600 filenames;
-  it never uses the submitted filename as a path. Extracted libraries are mode
-  0500 and the SDK key is retained mode 0600 for archive-free restart recovery.
+  embedded setup and Reconfigure flows use Home Assistant's authenticated native
+  file-upload service, then copy into generated mode-0600 filenames; they never
+  use the submitted filename as a path. Extracted libraries are mode 0500 and
+  the SDK key is retained mode 0600 for archive-free restart recovery.
 - Account and external-bridge credentials belong in Home Assistant config-entry
   storage. Firebase and KMS tokens remain in memory. Secrets are not passed as command
   arguments or environment variables to helper processes.
@@ -48,12 +49,12 @@ of the supported design.
 
 ## Deleting stored material
 
-Open the administrator-only **Owlet Cam Runtime** panel and choose **Delete
-proprietary files**. After explicit confirmation, the integration stops its
-native producer and deletes uploaded application archives, extracted Owlet/
-ThroughTek libraries, the stored SDK key, temporary extraction material and the
-native-validation marker. The checksum-verified open-source helper runtime and
-bounded logs remain. Removing the config entry separately deletes Home
+Open Settings → Devices & services → Owlet Cam, choose **Reconfigure**, select
+**Delete all stored proprietary files**, and complete the separate confirmation
+step. The integration stops its native producer and deletes uploaded packages,
+extracted Owlet/ThroughTek libraries, the stored SDK key, temporary extraction
+material and the native-validation marker. The checksum-verified open-source
+helper runtime and bounded logs remain. Removing the config entry separately deletes Home
 Assistant's stored account configuration according to Home Assistant's normal
 config-entry behavior.
 

@@ -5,11 +5,13 @@ from __future__ import annotations
 import os
 import re
 from hashlib import sha256
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.core import callback
+from homeassistant.components.file_upload import process_uploaded_file
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -36,7 +38,9 @@ from .const import (
     CONF_BRIDGE_USERNAME,
     CONF_CAMERA_DSN,
     CONF_CAMERA_NAME,
+    CONF_CONFIRM_DELETE,
     CONF_DEBUG_LOGGING,
+    CONF_DELETE_PROPRIETARY_FILES,
     CONF_EMAIL,
     CONF_ENABLE_AUDIO,
     CONF_EXPERIMENTAL_LOCAL_SENSORS,
@@ -51,6 +55,7 @@ from .const import (
     CONF_RETAIN_APPLICATION,
     CONF_RTSP_OVERRIDE,
     CONF_RUNTIME_CHANNEL,
+    CONF_RUNTIME_PACKAGE,
     CONF_STREAM_QUALITY,
     CONF_UPDATE_INTERVAL,
     CONF_VERIFY_TLS,
@@ -76,6 +81,8 @@ from .const import (
     REGION_EUROPE,
     REGIONS,
 )
+from .runtime.manager import OwletRuntimeError
+from .runtime.upload import OwletUploadError, store_uploaded_path
 
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -88,6 +95,8 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
     VERSION = 1
     _external_data: dict[str, Any] | None = None
     _external_cameras: list[BridgeCamera] | None = None
+    _embedded_data: dict[str, Any] | None = None
+    _reconfigure_data: dict[str, Any] | None = None
 
     @staticmethod
     @callback
@@ -256,15 +265,43 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
                 dsn = data[CONF_CAMERA_DSN]
                 await self.async_set_unique_id(dsn)
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=data[CONF_CAMERA_NAME],
-                    data={CONF_MODE: MODE_EMBEDDED, **data},
-                )
+                self._embedded_data = data
+                return await self.async_step_embedded_runtime()
             errors["base"] = error
 
         return self.async_show_form(
             step_id="embedded",
             data_schema=_embedded_schema(user_input),
+            errors=errors,
+        )
+
+    async def async_step_embedded_runtime(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Store the compact user-owned runtime package during setup."""
+        if self._embedded_data is None:
+            return self.async_abort(reason="cannot_connect")
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            error = await self._async_store_runtime_package(
+                str(user_input[CONF_RUNTIME_PACKAGE])
+            )
+            if error is None:
+                return self.async_create_entry(
+                    title=self._embedded_data[CONF_CAMERA_NAME],
+                    data={CONF_MODE: MODE_EMBEDDED, **self._embedded_data},
+                )
+            errors["base"] = error
+        return self.async_show_form(
+            step_id="embedded_runtime",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_RUNTIME_PACKAGE): selector.FileSelector(
+                        selector.FileSelectorConfig(accept=".owletcam")
+                    )
+                }
+            ),
             errors=errors,
         )
 
@@ -373,11 +410,8 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
             if error is None:
                 await self.async_set_unique_id(data[CONF_CAMERA_DSN])
                 self._abort_if_unique_id_mismatch(reason="wrong_camera")
-                return self.async_update_reload_and_abort(
-                    entry,
-                    title=data[CONF_CAMERA_NAME],
-                    data_updates=data,
-                )
+                self._reconfigure_data = data
+                return await self.async_step_reconfigure_runtime()
             errors["base"] = error
 
         defaults = dict(entry.data)
@@ -387,6 +421,109 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
             data_schema=_embedded_schema(user_input or defaults),
             errors=errors,
         )
+
+    async def async_step_reconfigure_runtime(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Optionally replace the runtime package while reconfiguring an entry."""
+        entry = self._get_reconfigure_entry()
+        if self._reconfigure_data is None:
+            return self.async_abort(reason="cannot_connect")
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            file_id = user_input.get(CONF_RUNTIME_PACKAGE)
+            delete_files = bool(user_input.get(CONF_DELETE_PROPRIETARY_FILES, False))
+            if file_id is not None and delete_files:
+                errors["base"] = "choose_one_runtime_action"
+            elif delete_files:
+                return await self.async_step_confirm_delete_runtime()
+            elif file_id is not None:
+                error = await self._async_store_runtime_package(str(file_id))
+                if error is not None:
+                    errors["base"] = error
+                else:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        title=self._reconfigure_data[CONF_CAMERA_NAME],
+                        data_updates=self._reconfigure_data,
+                    )
+            else:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    title=self._reconfigure_data[CONF_CAMERA_NAME],
+                    data_updates=self._reconfigure_data,
+                )
+        return self.async_show_form(
+            step_id="reconfigure_runtime",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_RUNTIME_PACKAGE): selector.FileSelector(
+                        selector.FileSelectorConfig(accept=".owletcam")
+                    ),
+                    vol.Required(CONF_DELETE_PROPRIETARY_FILES, default=False): bool,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_confirm_delete_runtime(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Require explicit confirmation before removing proprietary material."""
+        entry = self._get_reconfigure_entry()
+        if self._reconfigure_data is None:
+            return self.async_abort(reason="cannot_connect")
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if not user_input.get(CONF_CONFIRM_DELETE, False):
+                errors["base"] = "deletion_confirmation_required"
+            else:
+                runtime_data = getattr(entry, "runtime_data", None)
+                manager = (
+                    getattr(runtime_data, "runtime_manager", None)
+                    if runtime_data is not None
+                    else None
+                )
+                if manager is None:
+                    errors["base"] = "runtime_package_unavailable"
+                else:
+                    try:
+                        await manager.async_delete_proprietary_files()
+                    except (OSError, OwletRuntimeError):
+                        errors["base"] = "runtime_package_unavailable"
+                    else:
+                        return self.async_update_reload_and_abort(
+                            entry,
+                            title=self._reconfigure_data[CONF_CAMERA_NAME],
+                            data_updates=self._reconfigure_data,
+                        )
+        return self.async_show_form(
+            step_id="confirm_delete_runtime",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_CONFIRM_DELETE, default=False): bool}
+            ),
+            errors=errors,
+        )
+
+    async def _async_store_runtime_package(self, file_id: str) -> str | None:
+        """Consume one native file-selector upload into private runtime storage."""
+        root = Path(
+            self.hass.config.path("custom_components", "owlet_cam", "userfiles")
+        )
+        try:
+            await self.hass.async_add_executor_job(
+                _store_file_selector_upload,
+                self.hass,
+                file_id,
+                root / "uploads",
+            )
+        except OwletUploadError:
+            return "invalid_runtime_package"
+        except (OSError, ValueError):
+            return "runtime_package_unavailable"
+        return None
 
     async def async_step_reconfigure_bridge(
         self,
@@ -634,6 +771,16 @@ def _validate_email(value: str) -> str:
     if not _EMAIL_PATTERN.fullmatch(normalized):
         raise vol.Invalid("invalid email")
     return normalized
+
+
+def _store_file_selector_upload(
+    hass: HomeAssistant,
+    file_id: str,
+    uploads: Path,
+) -> None:
+    """Consume and privately persist one Home Assistant file-selector upload."""
+    with process_uploaded_file(hass, file_id) as source:
+        store_uploaded_path(source, uploads)
 
 
 def _embedded_schema(defaults: dict[str, Any] | None) -> vol.Schema:
