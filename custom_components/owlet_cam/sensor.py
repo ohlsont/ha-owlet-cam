@@ -335,9 +335,19 @@ class OwletCamRuntimeSensor(OwletCamRuntimeEntity, SensorEntity):
             case "audio_status":
                 return snapshot.audio_status
             case "audio_codec":
-                if snapshot.audio_codec_id == 0x86:
-                    return "AAC-LC (raw)"
-                if snapshot.audio_codec_id == 0x87:
-                    return "AAC-LC (ADTS)"
-                return None
+                codec_id = snapshot.audio_codec_id
+                if codec_id is None:
+                    return None
+                return {
+                    0x86: "AAC-LC (raw)",
+                    0x87: "AAC-LC (ADTS)",
+                    0x88: "AAC-LATM",
+                    0x89: "G.711 μ-law",
+                    0x8A: "G.711 A-law",
+                    0x8B: "ADPCM",
+                    0x8C: "PCM",
+                    0x8D: "Speex",
+                    0x8E: "MP3",
+                    0x8F: "G.726",
+                }.get(codec_id)
         return None

@@ -110,6 +110,11 @@ async def test_embedded_entity_properties_use_only_cached_data(
         audio_status = hass.states.get("sensor.nursery_audio_status")
         audio_codec = hass.states.get("sensor.nursery_audio_codec")
 
+        manager.snapshot.audio_codec_id = 0x8A
+        manager._notify_listeners()
+        await hass.async_block_till_done()
+        unsupported_audio_codec = hass.states.get("sensor.nursery_audio_codec")
+
     assert cloud is not None
     assert cloud.state == "on"
     assert credentials is not None
@@ -129,4 +134,6 @@ async def test_embedded_entity_properties_use_only_cached_data(
     assert audio_status.state == "streaming"
     assert audio_codec is not None
     assert audio_codec.state == "AAC-LC (raw)"
+    assert unsupported_audio_codec is not None
+    assert unsupported_audio_codec.state == "G.711 A-law"
     validate.assert_not_awaited()

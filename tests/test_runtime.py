@@ -1457,6 +1457,7 @@ async def test_runtime_manager_tracks_audio_without_changing_video_health(
     assert manager.diagnostics()["stream"]["audio"] == {
         "enabled": True,
         "status": "streaming",
+        "codec_id": "0x0086",
         "codec": "aac_raw",
         "sample_rate": 8000,
         "channels": 1,
@@ -1468,7 +1469,20 @@ async def test_runtime_manager_tracks_audio_without_changing_video_health(
 
     await manager._async_publish_stream_audio(0x8A, b"unsupported")
     assert manager.snapshot.audio_status == "unavailable"
+    assert manager.snapshot.audio_codec_id == 0x8A
     assert manager.snapshot.audio_last_error_code == "audio_codec_unsupported"
+    assert manager.diagnostics()["stream"]["audio"] == {
+        "enabled": True,
+        "status": "unavailable",
+        "codec_id": "0x008a",
+        "codec": None,
+        "sample_rate": None,
+        "channels": None,
+        "frames": 1,
+        "bytes": 7,
+        "last_frame_at": manager.snapshot.audio_last_frame_at.isoformat(),
+        "last_error_code": "audio_codec_unsupported",
+    }
     assert manager._stream_server.healthy is True
 
 

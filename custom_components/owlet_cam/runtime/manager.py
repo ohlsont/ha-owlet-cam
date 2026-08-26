@@ -1008,6 +1008,10 @@ class OwletRuntimeManager:
 
     async def _async_publish_stream_audio(self, codec_id: int, frame: bytes) -> None:
         """Mux one optional audio frame while keeping video independent."""
+        # Codec identifiers are public protocol metadata, not credentials. Keep
+        # the observed value even when unsupported so redacted diagnostics can
+        # distinguish camera formats without requiring native debug logging.
+        self.snapshot.audio_codec_id = codec_id
         published = await self._stream_server.async_publish_audio(
             frame, codec_id=codec_id
         )
@@ -1017,7 +1021,6 @@ class OwletRuntimeManager:
             return
         self.snapshot.audio_frames += 1
         self.snapshot.audio_bytes += len(frame)
-        self.snapshot.audio_codec_id = codec_id
         self.snapshot.audio_last_frame_at = datetime.now(UTC)
         self.snapshot.audio_last_error_code = None
         if self.snapshot.audio_status != "streaming":
@@ -1186,6 +1189,11 @@ class OwletRuntimeManager:
                 "audio": {
                     "enabled": self._audio_enabled,
                     "status": self.snapshot.audio_status,
+                    "codec_id": (
+                        f"0x{self.snapshot.audio_codec_id:04x}"
+                        if self.snapshot.audio_codec_id is not None
+                        else None
+                    ),
                     "codec": (
                         "aac_raw"
                         if self.snapshot.audio_codec_id == 0x86
@@ -1193,8 +1201,12 @@ class OwletRuntimeManager:
                         if self.snapshot.audio_codec_id == 0x87
                         else None
                     ),
-                    "sample_rate": 8000 if self.snapshot.audio_codec_id else None,
-                    "channels": 1 if self.snapshot.audio_codec_id else None,
+                    "sample_rate": (
+                        8000 if self.snapshot.audio_codec_id in (0x86, 0x87) else None
+                    ),
+                    "channels": (
+                        1 if self.snapshot.audio_codec_id in (0x86, 0x87) else None
+                    ),
                     "frames": self.snapshot.audio_frames,
                     "bytes": self.snapshot.audio_bytes,
                     "last_frame_at": _optional_isoformat(
