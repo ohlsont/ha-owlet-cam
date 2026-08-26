@@ -17,8 +17,8 @@ jobs:
         home-assistant: [stable, beta]
     name: Pytest (Home Assistant ${{ matrix.home-assistant }})
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: "3.14"
           enable-cache: true
@@ -34,7 +34,7 @@ jobs:
         run: >-
           uv run pytest --no-cov
           tests/test_apk.py tests/test_release_assets.py tests/test_diagnostics.py
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.1
         if: matrix.home-assistant == 'stable'
         with:
           name: coverage-stable

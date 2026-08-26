@@ -16,7 +16,7 @@ jobs:
   aarch64:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: Build reproducible proprietary-free AArch64 helper
         run: |
           mkdir -p dist
@@ -29,7 +29,7 @@ jobs:
             /bin/sh /source/scripts/build_arm64_helper_in_container.sh
       - name: Inspect helper asset
         run: python3 scripts/inspect_release_assets.py dist/owlet-cam-helper-aarch64.tar.gz
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: owlet-cam-helper-aarch64
           path: |
