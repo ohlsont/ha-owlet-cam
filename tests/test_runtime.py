@@ -1593,6 +1593,21 @@ async def test_core_stream_probe_uses_bounded_secret_free_ffprobe(
     assert result.bitrate_kbps > 0
     assert manager.snapshot.last_stream_probe == result
     assert manager.snapshot.last_stream_probe_at is not None
+    assert manager.snapshot.last_stream_probe_observation == {
+        "stream_count": 1,
+        "streams": [
+            {
+                "codec_name": "h264",
+                "profile": "High",
+                "level": 40,
+                "width": 1920,
+                "height": 1080,
+                "avg_frame_rate": "14/1",
+                "nb_read_frames": "112",
+            }
+        ],
+        "format_name": "mpegts",
+    }
     assert manager.snapshot.status == "ready"
     command = create_process.await_args.args
     assert command[0] == "/usr/bin/ffprobe"

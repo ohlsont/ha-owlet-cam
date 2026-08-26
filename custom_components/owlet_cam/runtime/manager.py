@@ -47,7 +47,9 @@ from .media_probe import (
     MediaProbeResult,
     ffprobe_binary,
     ffprobe_failure_code,
+    media_probe_error_code,
     parse_media_probe_output,
+    safe_media_probe_observation,
 )
 from .process import OwletHelperProcessError, OwletHelperProcessRunner
 from .protocol import (
@@ -185,6 +187,7 @@ class RuntimeSnapshot:
     last_snapshot_height: int | None = None
     last_stream_probe_at: datetime | None = None
     last_stream_probe: MediaProbeResult | None = None
+    last_stream_probe_observation: dict[str, Any] | None = None
     stream_status: str = "idle"
     stream_healthy: bool = False
     stream_active: bool = False
@@ -744,6 +747,9 @@ class OwletRuntimeManager:
                 if process.returncode != 0:
                     failure_code = ffprobe_failure_code(_stderr)
                     raise MediaProbeError("FFprobe could not inspect the live stream")
+                self.snapshot.last_stream_probe_observation = (
+                    safe_media_probe_observation(stdout)
+                )
                 probe = parse_media_probe_output(
                     stdout,
                     observed_frames=self.snapshot.stream_frames - frames_before,
@@ -757,7 +763,15 @@ class OwletRuntimeManager:
                 self.snapshot.last_error_code = None
                 self._set_status("ready")
                 return probe
-            except (MediaProbeError, OSError, TimeoutError, ValueError) as err:
+            except MediaProbeError as err:
+                self._raise_if_stopped()
+                if failure_code == "stream_probe_failed":
+                    failure_code = media_probe_error_code(err)
+                self._record_error(failure_code)
+                raise OwletRuntimeError(
+                    failure_code, "The Core-local stream probe failed"
+                ) from err
+            except (OSError, TimeoutError, ValueError) as err:
                 self._raise_if_stopped()
                 self._record_error(failure_code)
                 raise OwletRuntimeError(
@@ -1158,6 +1172,9 @@ class OwletRuntimeManager:
                 asdict(self.snapshot.last_stream_probe)
                 if self.snapshot.last_stream_probe is not None
                 else None
+            ),
+            "last_stream_probe_observation": (
+                self.snapshot.last_stream_probe_observation
             ),
             "stream": {
                 "status": self.snapshot.stream_status,

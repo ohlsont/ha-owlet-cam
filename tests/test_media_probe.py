@@ -10,7 +10,9 @@ from custom_components.owlet_cam.runtime.media_probe import (
     MediaProbeError,
     ffprobe_binary,
     ffprobe_failure_code,
+    media_probe_error_code,
     parse_media_probe_output,
+    safe_media_probe_observation,
 )
 
 
@@ -183,3 +185,55 @@ def test_ffprobe_failure_is_reduced_to_a_safe_code(
     stderr: bytes, expected: str
 ) -> None:
     assert ffprobe_failure_code(stderr) == expected
+
+
+def test_media_probe_observation_keeps_only_safe_allowlisted_fields() -> None:
+    payload = json.dumps(
+        {
+            "streams": [
+                {
+                    "codec_type": "audio",
+                    "codec_name": "aac_latm",
+                    "sample_rate": "8000",
+                    "channels": 1,
+                    "tags": {"secret": "fixture-token"},
+                    "filename": "/config/fixture-secret.ts",
+                }
+            ],
+            "format": {
+                "format_name": "mpegts",
+                "filename": "http://user:fixture-password@127.0.0.1/stream",
+                "tags": {"secret": "fixture-token"},
+            },
+            "unexpected": "fixture-token",
+        }
+    ).encode()
+
+    observation = safe_media_probe_observation(payload)
+
+    assert observation == {
+        "stream_count": 1,
+        "streams": [
+            {
+                "codec_type": "audio",
+                "codec_name": "aac_latm",
+                "sample_rate": "8000",
+                "channels": 1,
+            }
+        ],
+        "format_name": "mpegts",
+    }
+    assert "fixture" not in json.dumps(observation)
+
+
+def test_media_probe_parser_error_is_reduced_to_a_safe_code() -> None:
+    assert (
+        media_probe_error_code(
+            MediaProbeError("FFprobe did not count decoded video frames")
+        )
+        == "stream_probe_video_frame_count"
+    )
+    assert (
+        media_probe_error_code(MediaProbeError("untrusted detail"))
+        == "stream_probe_invalid_result"
+    )

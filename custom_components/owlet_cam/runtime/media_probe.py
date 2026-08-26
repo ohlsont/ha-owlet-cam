@@ -12,6 +12,9 @@ _MAX_PROBE_OUTPUT: Final = 64 * 1024
 _MAX_FAILURE_OUTPUT: Final = 8 * 1024
 _MAX_DIMENSION: Final = 16_384
 _MAX_FPS: Final = 240.0
+_SAFE_TEXT_CHARACTERS: Final = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /,._-"
+)
 
 
 class MediaProbeError(ValueError):
@@ -78,6 +81,76 @@ def ffprobe_failure_code(stderr: bytes) -> str:
     if "permission denied" in message or "operation not permitted" in message:
         return "stream_probe_permission_denied"
     return "stream_probe_ffprobe_exit"
+
+
+def media_probe_error_code(error: MediaProbeError) -> str:
+    """Reduce a parser failure to a stable, secret-free diagnostic code."""
+    return {
+        "FFprobe output size is invalid": "stream_probe_output_size",
+        "FFprobe returned malformed JSON": "stream_probe_malformed_json",
+        "FFprobe result must be an object": "stream_probe_invalid_result",
+        "FFprobe reported an invalid stream count": "stream_probe_stream_count",
+        "FFprobe did not report exactly one video stream": "stream_probe_video_missing",
+        "FFprobe video stream is invalid": "stream_probe_video_invalid",
+        "The Core-local stream is not H.264": "stream_probe_video_codec",
+        "FFprobe reported an invalid resolution": "stream_probe_resolution",
+        "No bounded media was observed": "stream_probe_no_media",
+        "FFprobe did not count decoded video frames": "stream_probe_video_frame_count",
+        "FFprobe reported an invalid frame rate": "stream_probe_frame_rate",
+        "FFprobe did not recognize the MPEG-TS container": "stream_probe_container",
+        "FFprobe reported multiple audio streams": "stream_probe_audio_stream_count",
+        "The Core-local audio stream is not AAC": "stream_probe_audio_codec",
+        "The Core-local AAC format is unsupported": "stream_probe_audio_format",
+        "FFprobe did not find the enabled audio stream": "stream_probe_audio_missing",
+    }.get(str(error), "stream_probe_invalid_result")
+
+
+def safe_media_probe_observation(payload: bytes) -> dict[str, Any] | None:
+    """Return a bounded allowlist of non-secret FFprobe fields for diagnostics."""
+    if not payload or len(payload) > _MAX_PROBE_OUTPUT:
+        return None
+    try:
+        document = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(document, dict):
+        return None
+    streams = document.get("streams")
+    if not isinstance(streams, list):
+        return None
+
+    safe_streams: list[dict[str, str | int]] = []
+    for stream in streams[:3]:
+        if not isinstance(stream, dict):
+            continue
+        safe_stream: dict[str, str | int] = {}
+        for key in (
+            "codec_type",
+            "codec_name",
+            "profile",
+            "level",
+            "width",
+            "height",
+            "avg_frame_rate",
+            "nb_read_frames",
+            "sample_rate",
+            "channels",
+        ):
+            value = _safe_probe_scalar(stream.get(key))
+            if value is not None:
+                safe_stream[key] = value
+        safe_streams.append(safe_stream)
+
+    observation: dict[str, Any] = {
+        "stream_count": len(streams),
+        "streams": safe_streams,
+    }
+    format_section = document.get("format")
+    if isinstance(format_section, dict):
+        format_name = _safe_probe_scalar(format_section.get("format_name"))
+        if format_name is not None:
+            observation["format_name"] = format_name
+    return observation
 
 
 def parse_media_probe_output(
@@ -199,6 +272,19 @@ def _positive_int(value: Any) -> int | None:
     if isinstance(value, str) and value.isdecimal():
         parsed = int(value)
         return parsed if parsed > 0 else None
+    return None
+
+
+def _safe_probe_scalar(value: Any) -> str | int | None:
+    """Allow only small numeric or constrained text values from FFprobe JSON."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value if -(2**31) <= value <= 2**31 - 1 else None
+    if (
+        isinstance(value, str)
+        and 0 < len(value) <= 64
+        and all(character in _SAFE_TEXT_CHARACTERS for character in value)
+    ):
+        return value
     return None
 
 
