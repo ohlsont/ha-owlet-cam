@@ -145,14 +145,10 @@ class H264LoopbackServer:
             access_unit = frame
             stream_type = _TS_STREAM_AAC_ADTS
         elif codec_id == _CODEC_AAC_LATM:
-            if _is_loas(frame):
-                access_unit = frame
-                stream_type = _TS_STREAM_AAC_LATM
-            else:
-                # Some Kalay camera firmware labels raw AAC access units as
-                # LATM. ADTS-wrap only frames that do not carry a LOAS syncword.
-                access_unit = _adts_header(len(frame)) + frame
-                stream_type = _TS_STREAM_AAC_ADTS
+            # Kalay may return either complete LOAS frames or the enclosed LATM
+            # AudioMuxElement. MPEG-TS stream type 0x11 needs LOAS framing.
+            access_unit = frame if _is_loas(frame) else _loas_header(len(frame)) + frame
+            stream_type = _TS_STREAM_AAC_LATM
         else:
             return False
         payload = self._muxer.mux_audio_access_unit(
@@ -555,6 +551,13 @@ def _is_adts(frame: bytes) -> bool:
 def _is_loas(frame: bytes) -> bool:
     """Return whether a frame starts with the 11-bit LOAS syncword 0x2B7."""
     return len(frame) >= 3 and frame[0] == 0x56 and frame[1] & 0xE0 == 0xE0
+
+
+def _loas_header(payload_size: int) -> bytes:
+    """Build a LOAS sync and 13-bit AudioMuxElement length header."""
+    if not 0 < payload_size <= 0x1FFF:
+        raise ValueError("LATM AudioMuxElement size is invalid")
+    return bytes((0x56, 0xE0 | (payload_size >> 8), payload_size & 0xFF))
 
 
 def _encode_pts(pts: int) -> bytes:

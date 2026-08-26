@@ -14,6 +14,7 @@ from custom_components.owlet_cam.runtime.stream import (
     _adts_header,
     _annex_b_nal_types,
     _is_loas,
+    _loas_header,
     _MpegTsMuxer,
     _pat_section,
     _pmt_section,
@@ -89,6 +90,12 @@ def test_detects_loas_latm_syncword() -> None:
     assert _is_loas(b"\x56\xe0\x01x")
     assert not _is_loas(b"\x56\xc0\x01x")
     assert not _is_loas(b"\x56\xe0")
+
+    header = _loas_header(0x123)
+    assert header == b"\x56\xe1\x23"
+    assert _is_loas(header + b"x" * 0x123)
+    with pytest.raises(ValueError, match="AudioMuxElement size"):
+        _loas_header(0)
 
 
 async def test_loopback_server_discards_old_gop_before_a_new_producer(
@@ -179,8 +186,12 @@ async def test_loopback_server_fans_out_one_gated_producer(
     assert _packet_pid(await first_reader.readexactly(188)) == 0x101
     assert _packet_pid(await second_reader.readexactly(188)) == 0x101
     assert await server.async_publish_audio(b"latm-raw", codec_id=0x88)
-    assert _packet_pid(await first_reader.readexactly(188)) == 0x101
-    assert _packet_pid(await second_reader.readexactly(188)) == 0x101
+    first_latm = await first_reader.readexactly(3 * 188)
+    second_latm = await second_reader.readexactly(3 * 188)
+    for latm in (first_latm, second_latm):
+        packets = [latm[index : index + 188] for index in range(0, len(latm), 188)]
+        assert [_packet_pid(packet) for packet in packets] == [0, 0x1000, 0x101]
+        assert _loas_header(len(b"latm-raw")) + b"latm-raw" in packets[2]
     assert not await server.async_publish_audio(b"unsupported", codec_id=0x8A)
 
     first_writer.close()
