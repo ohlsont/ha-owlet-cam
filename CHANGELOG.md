@@ -197,9 +197,13 @@ All notable changes are documented here. Versions follow semantic versioning.
 - A config-entry reload exposed an intermittent no-input helper race: the probe
   could exit before asyncio drained an empty stdin write. The runner now skips
   the write/drain when no payload exists, with a deterministic regression test;
-  the exact corrected file is checksum-installed on Yellow. Post-fix restart,
-  a real panel-selected upload, and delete/Repair recovery remain unperformed,
-  so the Milestone 7 gate is still pending.
+  the exact corrected file is checksum-installed on Yellow. A post-fix Core
+  restart automatically returned the runtime to `ready`: all five libraries
+  were compatible, no safe error was present, helper accounting was started
+  1/reaped 1 with zero forced kills, active Repairs were empty, and the current
+  structured Owlet log was empty. A real panel-selected upload and
+  delete/Repair recovery remain unperformed, so the Milestone 7 gate is still
+  pending.
 
 ## [0.2.0] - Unreleased
 

@@ -162,9 +162,12 @@ deployed and exercised on Yellow. Redacted diagnostics reported a real
 100-frame 1920×1080 probe and a Core-local H.264 Baseline stream probe while
 all helper children were reaped. A config-entry reload then exposed a fast-exit
 stdin race in no-input helpers; the regression fix is installed on Yellow and
-covered locally. Post-fix restart validation, a real panel-selected upload, and
-the confirmation-gated delete/Repair recovery cycle remain unperformed, so
-Milestone 7 is not accepted yet.
+covered locally. After a post-fix Core restart, automatic validation returned
+to `ready` with all five libraries compatible, no safe error, one helper
+started/reaped, zero forced kills, zero active Repairs, and no current Owlet
+system-log entries. A real panel-selected upload and the confirmation-gated
+delete/Repair recovery cycle remain unperformed, so Milestone 7 is not accepted
+yet.
 
 ## Planned runtime modes
 
