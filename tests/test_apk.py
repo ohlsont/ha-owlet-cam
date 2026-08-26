@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import stat
@@ -15,6 +16,10 @@ import pytest
 
 from custom_components.owlet_cam.runtime.apk import (
     REQUIRED_LIBRARIES,
+    RUNTIME_PACK_FORMAT,
+    RUNTIME_PACK_MANIFEST,
+    RUNTIME_PACK_SCHEMA_VERSION,
+    RUNTIME_PACK_SDK_KEY,
     ArchiveLimits,
     OwletArchiveError,
     _parse_binary_android_manifest,
@@ -22,6 +27,40 @@ from custom_components.owlet_cam.runtime.apk import (
 )
 
 _FIXTURE_KEY = b"AQ" + b"fixture-only-not-a-real-key-0123456789"
+
+
+def _runtime_pack(*, extra: bool = False, bad_hash: bool = False) -> bytes:
+    libraries = {name: f"runtime-pack:{name}".encode() for name in REQUIRED_LIBRARIES}
+    manifest = {
+        "format": RUNTIME_PACK_FORMAT,
+        "schema_version": RUNTIME_PACK_SCHEMA_VERSION,
+        "application_source_sha256": "a" * 64,
+        "package_name": "com.owletcare.sleep",
+        "app_version": "3.40.0",
+        "abi": "arm64-v8a",
+        "libraries": [
+            {
+                "name": name,
+                "path": f"lib/arm64-v8a/{name}",
+                "sha256": (
+                    "0" * 64
+                    if bad_hash and index == 0
+                    else hashlib.sha256(content).hexdigest()
+                ),
+                "size": len(content),
+            }
+            for index, (name, content) in enumerate(sorted(libraries.items()))
+        ],
+    }
+    result = io.BytesIO()
+    with zipfile.ZipFile(result, "w") as archive:
+        archive.writestr(RUNTIME_PACK_MANIFEST, json.dumps(manifest))
+        archive.writestr(RUNTIME_PACK_SDK_KEY, _FIXTURE_KEY)
+        for name, content in libraries.items():
+            archive.writestr(f"lib/arm64-v8a/{name}", content)
+        if extra:
+            archive.writestr("unexpected.txt", "not allowed")
+    return result.getvalue()
 
 
 def _application_zip(
@@ -79,6 +118,33 @@ def test_extracts_nested_apkm_split(tmp_path: Path) -> None:
 
     assert set(result.libraries) == REQUIRED_LIBRARIES
     assert result.sdk_key_found is True
+
+
+def test_extracts_strict_compact_runtime_pack(tmp_path: Path) -> None:
+    source = _write_archive(tmp_path / "runtime.owletcam", _runtime_pack())
+
+    result = extract_owlet_application(source, tmp_path / "out")
+
+    assert set(result.libraries) == REQUIRED_LIBRARIES
+    assert result.package_name == "com.owletcare.sleep"
+    assert result.app_version == "3.40.0"
+    assert result.sdk_key == _FIXTURE_KEY
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        (_runtime_pack(extra=True), "unexpected files"),
+        (_runtime_pack(bad_hash=True), "integrity check"),
+    ],
+)
+def test_rejects_tampered_runtime_pack(
+    tmp_path: Path, content: bytes, message: str
+) -> None:
+    source = _write_archive(tmp_path / "runtime.owletcam", content)
+
+    with pytest.raises(OwletArchiveError, match=message):
+        extract_owlet_application(source, tmp_path / "out")
 
 
 def test_reads_non_secret_application_metadata(tmp_path: Path) -> None:

@@ -49,6 +49,13 @@ jobs:
       - run: uv run mypy custom_components scripts
       - run: uv run python scripts/validate_release.py
       - run: uv run python scripts/check_secrets.py
+      - name: Build and inspect standalone desktop preparer
+        run: |
+          uv run python scripts/build_preparer_zipapp.py \
+            --output /tmp/owlet-cam-prepare.pyz
+          uv run python /tmp/owlet-cam-prepare.pyz --help
+          uv run python scripts/inspect_release_assets.py \
+            /tmp/owlet-cam-prepare.pyz
       - name: Validate JSON
         run: >-
           uv run python -c "import json,pathlib;

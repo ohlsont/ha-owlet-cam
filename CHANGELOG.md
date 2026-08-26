@@ -15,6 +15,9 @@ All notable changes are documented here. Versions follow semantic versioning.
   licence manifest, changelog-derived notes, and Home Assistant beta CI.
 - The administrator upload/runtime panel and the previously validated embedded
   snapshot and live H.264 paths from Milestones 3 through 7.
+- A deterministic desktop runtime preparer that minimizes a user-owned Owlet
+  application into a strict `.owletcam` package, with existing-archive, adb and
+  optional token-file-only apkeep acquisition paths.
 
 ### Security
 
@@ -23,6 +26,9 @@ All notable changes are documented here. Versions follow semantic versioning.
 - Release inspection rejects Owlet/ThroughTek libraries, application packages,
   unapproved shared libraries, traversal paths, special members, and common
   serialized secret patterns.
+- Compact runtime packages accept exactly five named ARM64 libraries, one
+  private SDK-key member and one integrity manifest; unexpected members,
+  duplicate paths, unsupported package IDs and hash/size mismatches are rejected.
 
 ## Development-only local video feasibility work
 

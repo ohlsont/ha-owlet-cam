@@ -91,6 +91,12 @@ def create_metadata(
             ],
             "contains_proprietary_components": False,
         },
+        "desktop_preparer": {
+            "license": "MIT",
+            "asset": "owlet-cam-prepare.pyz",
+            "contains_proprietary_components": False,
+            "contains_credentials": False,
+        },
         "assets": records,
     }
     (output_directory / "license-manifest.json").write_text(

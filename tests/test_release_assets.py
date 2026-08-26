@@ -16,19 +16,21 @@ from scripts.inspect_release_assets import inspect_archive
 def test_release_metadata_is_complete_and_deterministic(tmp_path: Path) -> None:
     first = tmp_path / "ha-owlet-cam.zip"
     second = tmp_path / "owlet-cam-helper-aarch64.tar.gz"
+    preparer = tmp_path / "owlet-cam-prepare.pyz"
     first.write_bytes(b"integration archive")
     second.write_bytes(b"helper archive")
+    preparer.write_bytes(b"preparer archive")
     output = tmp_path / "metadata"
 
     create_metadata(
-        assets=[second, first],
+        assets=[second, preparer, first],
         output_directory=output,
         version="0.7.0",
         created="2026-08-26T12:00:00Z",
     )
     initial = {path.name: path.read_bytes() for path in output.iterdir()}
     create_metadata(
-        assets=[first, second],
+        assets=[first, second, preparer],
         output_directory=output,
         version="0.7.0",
         created="2026-08-26T12:00:00Z",
@@ -42,9 +44,10 @@ def test_release_metadata_is_complete_and_deterministic(tmp_path: Path) -> None:
     }
     sbom = json.loads(initial["sbom.spdx.json"])
     assert sbom["spdxVersion"] == "SPDX-2.3"
-    assert len(sbom["packages"]) == 2
+    assert len(sbom["packages"]) == 3
     licences = json.loads(initial["license-manifest.json"])
     assert licences["helper_runtime"]["contains_proprietary_components"] is False
+    assert licences["desktop_preparer"]["contains_credentials"] is False
 
 
 def test_release_notes_are_extracted_from_matching_section() -> None:

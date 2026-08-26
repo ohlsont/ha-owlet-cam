@@ -35,6 +35,11 @@ jobs:
           git archive --format=zip --output=dist/ha-owlet-cam.zip HEAD \
             custom_components/owlet_cam hacs.json LICENSE README.md SECURITY.md \
             CHANGELOG.md TEST_REPORT.md REFERENCE_VERSIONS.md
+      - name: Build standalone desktop preparer
+        run: |
+          uv run python scripts/build_preparer_zipapp.py \
+            --output dist/owlet-cam-prepare.pyz
+          uv run python dist/owlet-cam-prepare.pyz --help
       - name: Build reproducible proprietary-free AArch64 helper
         run: |
           docker run --rm --network=bridge \
@@ -48,20 +53,23 @@ jobs:
           uv run python scripts/create_release_metadata.py \
             --version "${GITHUB_REF_NAME#v}" \
             --output-directory dist \
-            dist/ha-owlet-cam.zip dist/owlet-cam-helper-aarch64.tar.gz
+            dist/ha-owlet-cam.zip dist/owlet-cam-helper-aarch64.tar.gz \
+            dist/owlet-cam-prepare.pyz
           uv run python scripts/extract_release_notes.py \
             --version "${GITHUB_REF_NAME#v}" \
             --output dist/release-notes.md
       - name: Inspect release archives
         run: >-
           uv run python scripts/inspect_release_assets.py
-          dist/ha-owlet-cam.zip dist/owlet-cam-helper-aarch64.tar.gz
+          dist/ha-owlet-cam.zip dist/owlet-cam-helper-aarch64.tar.gz \
+          dist/owlet-cam-prepare.pyz
       - uses: softprops/action-gh-release@v2
         with:
           body_path: dist/release-notes.md
           files: |
             dist/ha-owlet-cam.zip
             dist/owlet-cam-helper-aarch64.tar.gz
+            dist/owlet-cam-prepare.pyz
             dist/checksums.txt
             dist/sbom.spdx.json
             dist/license-manifest.json

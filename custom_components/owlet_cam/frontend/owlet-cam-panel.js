@@ -83,7 +83,7 @@ class OwletCamRuntimePanel extends HTMLElement {
         ${this._fact("Last safe error", runtime.last_safe_error_code || "None")}
       </div>
       <div class="actions">
-        <label class="upload-label">Upload application<input type="file" accept=".apk,.apkm,.xapk,.zip" data-entry="${entry.entry_id}"></label>
+        <label class="upload-label">Upload runtime package<input type="file" accept=".owletcam,.apk,.apkm,.xapk,.zip" data-entry="${entry.entry_id}"></label>
         ${this._button(entry.entry_id, "authentication-test", "Authentication test")}
         ${this._button(entry.entry_id, "runtime-probe", "Runtime probe")}
         ${this._button(entry.entry_id, "frame-probe", "Frame probe")}

@@ -38,6 +38,21 @@ async def test_upload_streams_to_generated_private_path(
     assert stored.size == 12
 
 
+async def test_upload_accepts_compact_runtime_package(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    stored = await async_store_upload(
+        hass,
+        tmp_path / "uploads",
+        _chunks(b"compact-runtime"),
+        suffix=".OWLETCAM",
+        content_length=15,
+    )
+
+    files = list((tmp_path / "uploads").iterdir())
+    assert files[0].name == f"application-{stored.sha256[:16]}.owletcam"
+
+
 async def test_upload_atomically_replaces_previous_archive(
     hass: HomeAssistant, tmp_path: Path
 ) -> None:

@@ -151,13 +151,13 @@
     }
   },
   "issues": {
-    "missing_apk": {"title": "Owlet application is required", "description": "Open the Owlet Cam Runtime panel and upload your own Owlet APK, APKM, XAPK, or ZIP package."},
+    "missing_apk": {"title": "Owlet runtime package is required", "description": "Prepare your personal .owletcam runtime package on a computer, then upload it in the Owlet Cam Runtime panel. Complete APK, APKM, XAPK, and ZIP packages remain available as a development fallback."},
     "missing_arm64_split": {"title": "ARM64 Owlet application split is missing", "description": "Upload a package that includes the arm64-v8a application split."},
-    "missing_library": {"title": "A required native library is missing", "description": "Upload a complete current Owlet application package and run the runtime probe again."},
-    "missing_sdk_key": {"title": "Owlet SDK key was not found", "description": "The supplied application does not contain the required SDK material. Try a complete current package."},
+    "missing_library": {"title": "A required native library is missing", "description": "Prepare a new .owletcam package from a complete current Owlet application and run the runtime probe again."},
+    "missing_sdk_key": {"title": "Owlet SDK key was not found", "description": "The supplied runtime package does not contain the required user-owned SDK material. Prepare it again from a complete current application."},
     "unsupported_architecture": {"title": "Embedded Owlet runtime is unsupported on this architecture", "description": "Embedded mode currently requires AArch64. Use external bridge mode on this machine."},
     "library_incompatible": {"title": "Owlet native libraries are incompatible", "description": "The supplied libraries failed an ARM64 ELF or symbol compatibility gate. External bridge mode remains available."},
-    "invalid_apk": {"title": "Owlet application package is invalid", "description": "The uploaded package failed archive safety or content validation. Upload a complete unmodified package."},
+    "invalid_apk": {"title": "Owlet runtime package is invalid", "description": "The uploaded package failed archive safety, integrity, architecture, or content validation. Prepare a new package from an unmodified application."},
     "invalid_extracted_files": {"title": "Stored Owlet application files are invalid", "description": "Delete proprietary files in the Owlet Cam Runtime panel, upload the package again, and rerun the runtime probe."},
     "invalid_runtime_manifest": {"title": "Owlet helper runtime verification failed", "description": "The open-source helper runtime failed its manifest or checksum gate. Reinstall the matching integration release."},
     "invalid_runtime_storage": {"title": "Owlet runtime storage is unsafe", "description": "An integration-owned runtime directory is missing, replaced, or symlinked. Restore the Owlet Cam userfiles directory and rerun validation."},

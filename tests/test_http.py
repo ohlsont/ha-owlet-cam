@@ -112,6 +112,7 @@ async def test_admin_upload_status_and_confirmed_delete(
     assert response.status == 200
     payload = await response.json()
     assert payload["entries"][0]["runtime"]["application"]["status"] == "uploaded"
+    assert ".owletcam" in payload["supported_extensions"]
 
     response = await client.delete(
         f"/api/owlet_cam/runtime/{entry.entry_id}/application"

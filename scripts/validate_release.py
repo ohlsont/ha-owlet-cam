@@ -29,6 +29,7 @@ def main() -> int:
     constants = (INTEGRATION / "const.py").read_text()
     integration_init = (INTEGRATION / "__init__.py").read_text()
     changelog = (ROOT / "CHANGELOG.md").read_text()
+    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
     strings = json.loads((INTEGRATION / "strings.json").read_text())
     english = json.loads((INTEGRATION / "translations" / "en.json").read_text())
 
@@ -59,6 +60,10 @@ def main() -> int:
         raise SystemExit("CHANGELOG.md has no section for the manifest version")
     if strings != english:
         raise SystemExit("English translations differ from strings.json")
+    if release_workflow.count("dist/owlet-cam-prepare.pyz") < 4:
+        raise SystemExit(
+            "release workflow does not build, inspect and publish preparer"
+        )
     if hacs != {
         "name": "Owlet Cam",
         "homeassistant": "2024.11.0",

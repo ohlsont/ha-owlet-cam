@@ -9,6 +9,17 @@ This independent project is not affiliated with Owlet or ThroughTek.
   supervised child process with loopback-only control and media endpoints.
 - The project does not ship Owlet applications, ThroughTek libraries, Owlet SDK
   keys, camera credentials, account credentials, or authentication tokens.
+- The desktop preparer accepts an existing application, exports installed splits
+  with adb, or optionally invokes apkeep. The apkeep path accepts only a private
+  configuration-file path; Google email/auth tokens are never put in preparer
+  command arguments, output, the `.owletcam` package, or Home Assistant.
+- The preparer is a dependency-free Python zipapp published as a checksummed
+  release asset. Its deterministic source archive is inspected by CI and can be
+  reproduced from `scripts/build_preparer_zipapp.py`.
+- A `.owletcam` package contains only the user's five required ARM64 libraries,
+  SDK key and integrity metadata. It is mode 0600, must not be shared, and is
+  independently subjected to a fixed-member allowlist, size/hash checks and the
+  normal ELF/symbol gates after upload.
 - Proprietary files are user-supplied and stored beneath
   `custom_components/owlet_cam/userfiles/` with restrictive permissions. The
   authenticated admin panel streams uploads to generated mode-0600 filenames;
@@ -46,7 +57,7 @@ bounded logs remain. Removing the config entry separately deletes Home
 Assistant's stored account configuration according to Home Assistant's normal
 config-entry behavior.
 
-By default the uploaded application archive is deleted immediately after a
+By default the uploaded runtime package or application archive is deleted immediately after a
 successful extraction/library probe. The embedded option **Retain uploaded
 application after extraction** can keep it. Firebase, KMS UID/AuthKey/AV
 password material and tokens remain memory-only and are never written to

@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from .const import CONF_MODE, DOMAIN, MODE_EMBEDDED
+from .runtime.apk import SUPPORTED_ARCHIVE_SUFFIXES
 from .runtime.manager import OwletRuntimeError, OwletRuntimeManager
 from .runtime.upload import MAXIMUM_UPLOAD_SIZE, OwletUploadError
 
@@ -51,7 +52,7 @@ class OwletRuntimeStatusView(HomeAssistantView):
                 {
                     "entries": entries,
                     "maximum_upload_size": MAXIMUM_UPLOAD_SIZE,
-                    "supported_extensions": [".apk", ".apkm", ".xapk", ".zip"],
+                    "supported_extensions": sorted(SUPPORTED_ARCHIVE_SUFFIXES),
                 },
             ),
         )

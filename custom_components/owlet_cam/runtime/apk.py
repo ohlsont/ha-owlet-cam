@@ -14,8 +14,18 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import IO, Final
 
-SUPPORTED_ARCHIVE_SUFFIXES: Final = frozenset({".apk", ".apkm", ".xapk", ".zip"})
+RUNTIME_PACK_SUFFIX: Final = ".owletcam"
+RUNTIME_PACK_FORMAT: Final = "owlet_cam_runtime_pack"
+RUNTIME_PACK_SCHEMA_VERSION: Final = 1
+RUNTIME_PACK_MANIFEST: Final = "owlet-cam-runtime.json"
+RUNTIME_PACK_SDK_KEY: Final = "private/sdk-key"
+SUPPORTED_ARCHIVE_SUFFIXES: Final = frozenset(
+    {".apk", ".apkm", ".xapk", ".zip", RUNTIME_PACK_SUFFIX}
+)
 TARGET_ABI: Final = "arm64-v8a"
+OWLET_ANDROID_PACKAGES: Final = frozenset(
+    {"com.owletcare.sleep", "com.owletcare.owletcare"}
+)
 REQUIRED_LIBRARIES: Final = frozenset(
     {
         "libAVAPIs.so",
@@ -114,6 +124,7 @@ class _ExtractionState:
     sdk_candidates: set[bytes] = field(default_factory=set)
     package_name: str | None = None
     app_version: str | None = None
+    runtime_pack_libraries: dict[str, tuple[str, int]] | None = None
 
 
 def extract_owlet_application(
@@ -156,6 +167,16 @@ def extract_owlet_application(
         )
     if len(state.sdk_candidates) > 1:
         raise OwletArchiveError("Application archive contains ambiguous SDK keys")
+    if state.runtime_pack_libraries is not None:
+        for name, (
+            expected_sha256,
+            expected_size,
+        ) in state.runtime_pack_libraries.items():
+            library = state.libraries[name]
+            if library.sha256 != expected_sha256 or library.size != expected_size:
+                raise OwletArchiveError(
+                    "Owlet runtime package library integrity check failed"
+                )
 
     sdk_key = next(iter(state.sdk_candidates), None)
     return ExtractedOwletApplication(
@@ -197,6 +218,7 @@ def _process_zip(source: IO[bytes], state: _ExtractionState, *, depth: int) -> N
     if depth > state.budget.limits.maximum_nesting_depth:
         raise OwletArchiveError("Application archive nesting exceeds the safety limit")
     with zipfile.ZipFile(source) as archive:
+        runtime_pack = _read_runtime_pack_manifest(archive, state, depth=depth)
         for info in archive.infolist():
             _validate_member(info)
             if info.is_dir():
@@ -204,6 +226,22 @@ def _process_zip(source: IO[bytes], state: _ExtractionState, *, depth: int) -> N
             state.budget.account(info)
             member = PurePosixPath(info.filename)
             basename = member.name
+
+            if runtime_pack and info.filename == RUNTIME_PACK_MANIFEST:
+                continue
+            if runtime_pack and info.filename == RUNTIME_PACK_SDK_KEY:
+                with archive.open(info, "r") as data:
+                    sdk_key = data.read(513)
+                if (
+                    len(sdk_key) != info.file_size
+                    or _SDK_KEY_RE.fullmatch(sdk_key) is None
+                ):
+                    raise OwletArchiveError(
+                        "Owlet runtime package SDK key is invalid",
+                        code="missing_sdk_key",
+                    )
+                state.sdk_candidates.add(sdk_key)
+                continue
 
             if basename == "manifest.json" and info.file_size <= 1024 * 1024:
                 with archive.open(info, "r") as data:
@@ -240,6 +278,111 @@ def _process_zip(source: IO[bytes], state: _ExtractionState, *, depth: int) -> N
             if member.suffix.lower() in _SCAN_SUFFIXES:
                 with archive.open(info, "r") as data:
                     _scan_sdk_key(data, state.sdk_candidates)
+
+
+def _read_runtime_pack_manifest(
+    archive: zipfile.ZipFile, state: _ExtractionState, *, depth: int
+) -> bool:
+    """Recognize and strictly validate one compact desktop-prepared package."""
+    matching = [
+        info for info in archive.infolist() if info.filename == RUNTIME_PACK_MANIFEST
+    ]
+    if not matching:
+        return False
+    if depth != 0 or len(matching) != 1:
+        raise OwletArchiveError("Owlet runtime package structure is invalid")
+    info = matching[0]
+    _validate_member(info)
+    if info.file_size > 64 * 1024:
+        raise OwletArchiveError("Owlet runtime package manifest is too large")
+    try:
+        with archive.open(info, "r") as source:
+            document: object = json.loads(source.read(64 * 1024 + 1))
+    except (KeyError, UnicodeError, json.JSONDecodeError) as err:
+        raise OwletArchiveError("Owlet runtime package manifest is invalid") from err
+    if not isinstance(document, dict):
+        raise OwletArchiveError("Owlet runtime package manifest is invalid")
+    if set(document) != {
+        "format",
+        "schema_version",
+        "application_source_sha256",
+        "package_name",
+        "app_version",
+        "abi",
+        "libraries",
+    }:
+        raise OwletArchiveError("Owlet runtime package manifest is invalid")
+    if (
+        document.get("format") != RUNTIME_PACK_FORMAT
+        or document.get("schema_version") != RUNTIME_PACK_SCHEMA_VERSION
+        or document.get("abi") != TARGET_ABI
+        or document.get("package_name") not in OWLET_ANDROID_PACKAGES
+    ):
+        raise OwletArchiveError("Owlet runtime package is incompatible")
+    version = document.get("app_version")
+    source_sha256 = document.get("application_source_sha256")
+    libraries = document.get("libraries")
+    if (
+        (version is not None and (not isinstance(version, str) or len(version) > 64))
+        or not isinstance(source_sha256, str)
+        or len(source_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in source_sha256)
+        or not isinstance(libraries, list)
+    ):
+        raise OwletArchiveError("Owlet runtime package manifest is invalid")
+
+    expected_libraries: dict[str, tuple[str, int]] = {}
+    expected_paths = {RUNTIME_PACK_MANIFEST, RUNTIME_PACK_SDK_KEY}
+    for item in libraries:
+        if not isinstance(item, dict):
+            raise OwletArchiveError("Owlet runtime package manifest is invalid")
+        if set(item) != {"name", "path", "sha256", "size"}:
+            raise OwletArchiveError("Owlet runtime package manifest is invalid")
+        name = item.get("name")
+        path = item.get("path")
+        sha256 = item.get("sha256")
+        size = item.get("size")
+        if (
+            name not in REQUIRED_LIBRARIES
+            or path != f"lib/{TARGET_ABI}/{name}"
+            or not isinstance(sha256, str)
+            or len(sha256) != 64
+            or any(character not in "0123456789abcdef" for character in sha256)
+            or not isinstance(size, int)
+            or isinstance(size, bool)
+            or size <= 0
+            or name in expected_libraries
+        ):
+            raise OwletArchiveError("Owlet runtime package manifest is invalid")
+        expected_libraries[name] = (sha256, size)
+        expected_paths.add(path)
+    if set(expected_libraries) != REQUIRED_LIBRARIES:
+        raise OwletArchiveError("Owlet runtime package is incomplete")
+
+    members = archive.infolist()
+    member_names = [info.filename for info in members]
+    if (
+        any(info.is_dir() for info in members)
+        or len(member_names) != len(set(member_names))
+        or set(member_names) != expected_paths
+    ):
+        raise OwletArchiveError("Owlet runtime package contains unexpected files")
+    by_name = {info.filename: info for info in archive.infolist()}
+    for path in expected_paths:
+        _validate_member(by_name[path])
+    if by_name[RUNTIME_PACK_SDK_KEY].file_size > 512:
+        raise OwletArchiveError(
+            "Owlet runtime package SDK key is invalid", code="missing_sdk_key"
+        )
+    for name, (_sha256, size) in expected_libraries.items():
+        if by_name[f"lib/{TARGET_ABI}/{name}"].file_size != size:
+            raise OwletArchiveError(
+                "Owlet runtime package library integrity check failed"
+            )
+    state.package_name = document["package_name"]
+    state.app_version = version
+    state.runtime_pack_libraries = expected_libraries
+    return True
 
 
 def _validate_member(info: zipfile.ZipInfo) -> None:

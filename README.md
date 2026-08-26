@@ -184,9 +184,10 @@ is accepted on Yellow.
 - **External bridge** connects to an independently running, compatible
   `btoth525/Owlet-To-Rtsp` bridge and exposes its RTSP camera and room sensors
   without MQTT or a separately configured Generic Camera entity.
-- **Embedded experimental** will use a separately supervised native helper. It
+- **Embedded experimental** uses a separately supervised native helper. It
   will never load proprietary native libraries into Home Assistant's Python
-  process, and users will supply their own application package.
+  process. Users prepare a compact personal runtime package from their own
+  installed Owlet application outside Home Assistant.
 
 External mode will remain available as a fallback after embedded mode exists.
 
@@ -219,14 +220,60 @@ checks have passed on that target. HACS installation remains unperformed.
 The temporary Milestone 0 lifecycle mode remains hidden from ordinary setup and
 is available only when Core starts with `OWLET_CAM_DEV_MODE=1`.
 
+## Prepare the embedded runtime package
+
+The recommended embedded input is a `.owletcam` file created on a desktop. It
+contains only the five required ARM64 libraries, the user-owned SDK licence key,
+and integrity metadata. It contains no Android code/resources, Owlet account
+credentials, camera credentials or tokens. The resulting file is private
+proprietary material: do not publish or share it.
+
+With Dream already installed on one authorized Android device or Play-enabled
+Android Studio emulator, download the checksum-listed `owlet-cam-prepare.pyz`
+asset from the matching integration release and run:
+
+```bash
+python3 owlet-cam-prepare.pyz adb owlet.owletcam
+```
+
+When multiple devices are connected, pass `--serial DEVICE`. The tool supports
+both the current Dream package (`com.owletcare.sleep`, default) and the legacy
+Owlet Care package (`--package com.owletcare.owletcare`). It uses `adb shell pm
+path` and `adb pull`; it does not read application data or Owlet credentials.
+
+Advanced users may instead use apkeep's Google Play backend. Configure apkeep
+itself in a private mode-0600 INI file, then pass only that file's path:
+
+```bash
+chmod 600 /path/to/apkeep.ini
+python3 owlet-cam-prepare.pyz apkeep owlet.owletcam \
+  --config /path/to/apkeep.ini
+```
+
+The Google email/token never appears in the preparer's command arguments or
+output. apkeep warns that Google may terminate accounts for Terms-of-Service
+violations; this is therefore an optional expert workflow, not the default.
+Downloading through apkeep's third-party APKPure backend is not supported.
+
+An existing APK/APKM/XAPK can also be minimized without downloading anything:
+
+```bash
+python3 owlet-cam-prepare.pyz archive dream.xapk owlet.owletcam
+```
+
+Upload `owlet.owletcam` in the administrator-only **Owlet Cam Runtime** panel.
+The integration independently verifies the fixed package schema, hashes, SDK
+key shape, AArch64 ELF structure and required symbols, then deletes the upload
+by default. Direct full-application upload remains a development fallback.
+
 ## Configuration and screenshots
 
 Configuration, reauthentication, reconfiguration, and grouped general,
 external and embedded options are implemented in the UI. Defaults favor
 stability and coexistence:
 keep-warm, audio, direct-P2P preference, and experimental local sensors are all
-off. Retaining the uploaded application is also off by default. Administrators
-manage user-supplied application files and native probes from the **Owlet Cam
+off. Retaining the uploaded runtime package is also off by default. Administrators
+manage user-supplied runtime files and native probes from the **Owlet Cam
 Runtime** sidebar panel. Real Yellow UI video was visually verified, but no
 screenshot containing the user's room is committed to this repository.
 
