@@ -344,6 +344,12 @@ proprietary files or captured secrets.
 
 ## Licence
 
-This project's clean-room source is available under the [MIT licence](LICENSE).
-Owlet, ThroughTek, Kalay, Android, and other names belong to their respective
-owners. User-supplied proprietary files remain subject to their original terms.
+This project's original clean-room source, documentation, tests, workflows, and
+artwork are available under the [MIT licence](LICENSE), copyright 2026 Tomas
+Ohlson and ha-owlet-cam contributors.
+
+That licence does not cover user-supplied Owlet applications, Owlet/ThroughTek
+libraries, SDK keys, camera credentials, or other proprietary material.
+Separately distributed AOSP runtime components retain their own licences and
+ship with their applicable notices. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the complete boundary.

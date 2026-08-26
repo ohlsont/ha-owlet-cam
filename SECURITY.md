@@ -1,6 +1,10 @@
 # Security policy
 
 This independent project is not affiliated with Owlet or ThroughTek.
+The repository's MIT licence applies only to original project material. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the licence boundary around
+user-supplied proprietary files and separately distributed open-source runtime
+components.
 
 ## Security architecture
 
