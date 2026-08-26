@@ -8,12 +8,19 @@ from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .api.bridge import OwletHttpBridgeClient
 from .api.cloud import OwletCloudClient
 from .api.models import OwletCameraData
 from .const import (
+    CONF_BRIDGE_CAMERA_ID,
+    CONF_BRIDGE_PASSWORD,
+    CONF_BRIDGE_TIMEOUT,
+    CONF_BRIDGE_URL,
+    CONF_BRIDGE_USERNAME,
     CONF_CAMERA_DSN,
     CONF_CAMERA_NAME,
     CONF_EMAIL,
@@ -25,7 +32,10 @@ from .const import (
     CONF_RECONNECT_BACKOFF,
     CONF_REGION,
     CONF_RETAIN_APPLICATION,
+    CONF_RTSP_OVERRIDE,
     CONF_UPDATE_INTERVAL,
+    CONF_VERIFY_TLS,
+    DEFAULT_BRIDGE_TIMEOUT,
     DEFAULT_IDLE_TIMEOUT,
     DEFAULT_KEEP_WARM,
     DEFAULT_NO_FRAME_TIMEOUT,
@@ -33,6 +43,7 @@ from .const import (
     DEFAULT_RETAIN_APPLICATION,
     DEFAULT_UPDATE_INTERVAL,
     MODE_EMBEDDED,
+    MODE_EXTERNAL,
     PANEL_URL_PATH,
     PLATFORMS,
     STATIC_URL_PATH,
@@ -46,6 +57,8 @@ from .http import (
 )
 from .repairs import async_remove_runtime_issues, async_sync_runtime_issues
 from .runtime.manager import OwletRuntimeManager
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema("owlet_cam")
 
 
 async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
@@ -85,7 +98,7 @@ async def _async_register_runtime_panel(hass: HomeAssistant) -> None:
         webcomponent_name="owlet-cam-runtime-panel",
         sidebar_title="Owlet Cam Runtime",
         sidebar_icon="mdi:cctv",
-        module_url=f"{STATIC_URL_PATH}/owlet-cam-panel.js?v=0.2.0",
+        module_url=f"{STATIC_URL_PATH}/owlet-cam-panel.js?v=0.7.0",
         require_admin=True,
         config_panel_domain="owlet_cam",
     )
@@ -96,7 +109,7 @@ async def async_setup_entry(
     entry: OwletCamConfigEntry,
 ) -> bool:
     """Set up Owlet Cam from a config entry."""
-    client = None
+    client: OwletCloudClient | OwletHttpBridgeClient | None = None
     cameras: dict[str, OwletCameraData] = {}
     runtime_manager = None
     if entry.data.get(CONF_MODE) == MODE_EMBEDDED:
@@ -140,6 +153,34 @@ async def async_setup_entry(
             ),
         )
         await runtime_manager.async_refresh_proprietary_state()
+    elif entry.data.get(CONF_MODE) == MODE_EXTERNAL:
+        camera_id = entry.data[CONF_BRIDGE_CAMERA_ID]
+        client = OwletHttpBridgeClient(
+            async_get_clientsession(hass),
+            base_url=entry.data[CONF_BRIDGE_URL],
+            username=entry.data.get(CONF_BRIDGE_USERNAME),
+            password_or_token=entry.data.get(CONF_BRIDGE_PASSWORD),
+            verify_tls=entry.data.get(CONF_VERIFY_TLS, True),
+            request_timeout=entry.options.get(
+                CONF_BRIDGE_TIMEOUT, DEFAULT_BRIDGE_TIMEOUT
+            ),
+            rtsp_override=entry.options.get(
+                CONF_RTSP_OVERRIDE, entry.data.get(CONF_RTSP_OVERRIDE)
+            ),
+        )
+        coordinator = OwletCamCoordinator(
+            hass,
+            bridge_client=client,
+            bridge_camera_id=camera_id,
+            update_interval=timedelta(
+                seconds=entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+            ),
+        )
+        await coordinator.async_config_entry_first_refresh()
+        cameras[camera_id] = OwletCameraData(
+            camera_id=camera_id,
+            name=entry.data[CONF_CAMERA_NAME],
+        )
     else:
         coordinator = OwletCamCoordinator(hass)
 

@@ -7,16 +7,29 @@ import shlex
 import time
 from contextlib import suppress
 from pathlib import Path
-from typing import Final, Protocol, override
+from typing import Final, Protocol, cast, override
 
 from haffmpeg.tools import IMAGE_JPEG, ImageFrame
 from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.components.ffmpeg import get_ffmpeg_manager
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_CAMERA_DSN, CONF_CAMERA_NAME, CONF_MODE, MODE_EMBEDDED
+from .api.bridge import OwletBridgeClient
+from .api.exceptions import (
+    OwletBridgeAuthenticationError,
+    OwletBridgeCompatibilityError,
+    OwletBridgeConnectionError,
+)
+from .const import (
+    CONF_BRIDGE_CAMERA_ID,
+    CONF_CAMERA_DSN,
+    CONF_CAMERA_NAME,
+    CONF_MODE,
+    MODE_EMBEDDED,
+    MODE_EXTERNAL,
+)
 from .data import OwletCamConfigEntry
-from .entity import OwletCamRuntimeEntity
+from .entity import OwletCamBridgeEntity, OwletCamRuntimeEntity
 from .runtime.manager import OwletRuntimeError
 
 _SNAPSHOT_CACHE_SECONDS: Final = 5.0
@@ -38,9 +51,77 @@ async def async_setup_entry(
 ) -> None:
     """Set up one gated embedded camera."""
     manager = entry.runtime_data.runtime_manager
+    if entry.data.get(CONF_MODE) == MODE_EXTERNAL:
+        async_add_entities([OwletCamExternalCamera(entry)])
+        return
     if entry.data.get(CONF_MODE) != MODE_EMBEDDED or manager is None:
         return
     async_add_entities([OwletCamEmbeddedCamera(entry)])
+
+
+class OwletCamExternalCamera(OwletCamBridgeEntity, Camera):
+    """Expose a native HA camera backed by the bridge's RTSP and snapshot APIs."""
+
+    _attr_name = None
+    _attr_supported_features = CameraEntityFeature.STREAM
+
+    def __init__(self, entry: OwletCamConfigEntry) -> None:
+        Camera.__init__(self)
+        client = entry.runtime_data.client
+        if client is None:
+            raise RuntimeError("External bridge client is unavailable")
+        self._client = cast(OwletBridgeClient, client)
+        camera_id = entry.data[CONF_BRIDGE_CAMERA_ID]
+        camera = entry.runtime_data.cameras[camera_id]
+        OwletCamBridgeEntity.__init__(
+            self,
+            entry.runtime_data.coordinator,
+            camera_id=camera_id,
+            camera_name=camera.name,
+            key="camera",
+        )
+
+    @property
+    @override
+    def available(self) -> bool:
+        return super().available and bool(
+            self.coordinator.data.get("camera_online", False)
+        )
+
+    @property
+    @override
+    def use_stream_for_stills(self) -> bool:
+        return bool(self.coordinator.data.get("stream_healthy", False))
+
+    @property
+    @override
+    def is_streaming(self) -> bool:
+        return bool(self.coordinator.data.get("stream_healthy", False))
+
+    @override
+    async def stream_source(self) -> str | None:
+        try:
+            return await self._client.async_get_stream_source(self._camera_id)
+        except (
+            OwletBridgeAuthenticationError,
+            OwletBridgeCompatibilityError,
+            OwletBridgeConnectionError,
+        ):
+            return None
+
+    @override
+    async def async_camera_image(
+        self, width: int | None = None, height: int | None = None
+    ) -> bytes | None:
+        del width, height
+        try:
+            return await self._client.async_get_snapshot(self._camera_id)
+        except (
+            OwletBridgeAuthenticationError,
+            OwletBridgeCompatibilityError,
+            OwletBridgeConnectionError,
+        ):
+            return None
 
 
 class OwletCamEmbeddedCamera(OwletCamRuntimeEntity, Camera):

@@ -1,0 +1,37 @@
+name: Helper build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "helper/**"
+      - "scripts/build_arm64_helper_in_container.sh"
+      - "scripts/build_helper_runtime.py"
+      - ".github/workflows/helper.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  aarch64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build reproducible proprietary-free AArch64 helper
+        run: |
+          mkdir -p dist
+          version=$(python3 -c "import json; print(json.load(open('custom_components/owlet_cam/manifest.json'))['version'])")
+          docker run --rm --network=bridge \
+            -e HELPER_VERSION="$version" \
+            -v "$PWD:/source:ro" \
+            -v "$PWD/dist:/output" \
+            debian@sha256:1710bde34461551a19a47c787885ec9ad7058d9a5bead2affb8d088fa2f8502b \
+            /bin/sh /source/scripts/build_arm64_helper_in_container.sh
+      - name: Inspect helper asset
+        run: python3 scripts/inspect_release_assets.py dist/owlet-cam-helper-aarch64.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: owlet-cam-helper-aarch64
+          path: |
+            dist/owlet-cam-helper-aarch64.tar.gz
+            dist/owlet-cam-helper-aarch64.tar.gz.sha256

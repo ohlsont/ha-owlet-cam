@@ -10,13 +10,19 @@
     },
     "error": {
       "camera_not_found": "This camera was not found on the authenticated Owlet account. Check the DSN and account.",
+      "cannot_connect_bridge": "Could not connect to the Owlet bridge. Check its URL, network access, and TLS setting.",
       "cannot_connect": "Could not connect to the Owlet service. Please try again.",
+      "invalid_bridge_auth": "The Owlet bridge rejected the API credentials.",
+      "invalid_bridge_url": "Enter a valid HTTP or HTTPS bridge base URL without embedded credentials or query parameters.",
       "invalid_auth": "The email or password is incorrect, or the account is unavailable.",
       "invalid_dsn": "Enter a valid Owlet camera identifier beginning with the letters OC.",
       "invalid_dsn_zero": "The DSN must begin with the letter O, not the digit 0.",
       "invalid_email": "Enter a valid email address.",
       "invalid_name": "Enter a camera name.",
+      "no_cameras": "The bridge did not return any configured cameras.",
+      "no_stream": "The bridge did not provide a usable RTSP source for this camera.",
       "rate_limited": "Owlet is temporarily rate limiting requests. Please wait and try again.",
+      "unsupported_bridge": "The service does not expose a compatible Owlet-To-Rtsp API.",
       "unsupported_region": "This Owlet region is not supported."
     },
     "step": {
@@ -42,6 +48,24 @@
           "password": "Stored in Home Assistant config-entry data and never written to runtime files."
         }
       },
+      "external": {
+        "title": "Connect to an Owlet bridge",
+        "description": "Connect to the current btoth525/Owlet-To-Rtsp HTTP API. The integration ignores camera credentials returned by that bridge and requests room temperatures in Celsius.",
+        "data": {
+          "bridge_password": "Optional API password or token",
+          "bridge_url": "Bridge base URL",
+          "bridge_username": "Optional API username",
+          "explicit_rtsp_source": "Optional explicit RTSP URL override",
+          "verify_tls": "Verify TLS certificate"
+        }
+      },
+      "external_camera": {
+        "title": "Select a camera",
+        "description": "Choose the bridge camera to add as one Home Assistant device.",
+        "data": {
+          "bridge_camera_id": "Camera"
+        }
+      },
       "reauth_confirm": {
         "title": "Reauthenticate Owlet Cam",
         "description": "Enter valid Owlet account credentials for this camera.",
@@ -49,6 +73,14 @@
           "email": "Owlet email",
           "password": "Owlet password",
           "region": "Region"
+        }
+      },
+      "reauth_bridge": {
+        "title": "Reauthenticate Owlet bridge",
+        "description": "Enter valid API credentials for the existing external bridge camera.",
+        "data": {
+          "bridge_password": "API password or token",
+          "bridge_username": "API username"
         }
       },
       "reconfigure": {
@@ -60,6 +92,17 @@
           "email": "Owlet email",
           "password": "Owlet password",
           "region": "Region"
+        }
+      },
+      "reconfigure_bridge": {
+        "title": "Reconfigure Owlet bridge",
+        "description": "Revalidate the existing camera against updated bridge connection settings.",
+        "data": {
+          "bridge_password": "Optional replacement API password or token",
+          "bridge_url": "Bridge base URL",
+          "bridge_username": "Optional API username",
+          "explicit_rtsp_source": "Optional explicit RTSP URL override",
+          "verify_tls": "Verify TLS certificate"
         }
       }
     }
@@ -96,6 +139,14 @@
         "data_description": {
           "prefer_direct_p2p": "Observation only until testing proves that relay mode causes failures."
         }
+      },
+      "external": {
+        "title": "External bridge",
+        "description": "Configure bridge polling and an optional replacement RTSP source.",
+        "data": {
+          "bridge_request_timeout": "Bridge request timeout",
+          "explicit_rtsp_source": "Explicit RTSP source override"
+        }
       }
     }
   },
@@ -111,6 +162,7 @@
     "invalid_runtime_manifest": {"title": "Owlet helper runtime verification failed", "description": "The open-source helper runtime failed its manifest or checksum gate. Reinstall the matching integration release."},
     "invalid_runtime_storage": {"title": "Owlet runtime storage is unsafe", "description": "An integration-owned runtime directory is missing, replaced, or symlinked. Restore the Owlet Cam userfiles directory and rerun validation."},
     "runtime_checksum_mismatch": {"title": "Owlet helper checksum verification failed", "description": "The open-source helper does not match its pinned checksum. Reinstall the matching integration release; it will not be executed."},
+    "runtime_download_failed": {"title": "Owlet helper download failed", "description": "The exact open-source helper for this integration version could not be downloaded or installed. Check internet access and the matching GitHub release, then run the runtime probe again."},
     "missing_runtime": {"title": "Owlet helper runtime is missing", "description": "Install the helper runtime matching this integration version before running an embedded probe."},
     "obsolete_helper_runtime": {"title": "Owlet helper runtime is obsolete", "description": "Install the helper runtime pinned to this integration release before continuing embedded operation."},
     "runtime_state_write_failed": {"title": "Owlet runtime state could not be saved", "description": "Check available storage and filesystem health, then rerun the runtime probe."},
@@ -164,6 +216,12 @@
       }
     },
     "binary_sensor": {
+      "bridge_online": {
+        "name": "Bridge online"
+      },
+      "camera_online": {
+        "name": "Camera online"
+      },
       "camera_credentials_available": {
         "name": "Camera credentials available"
       },
@@ -172,6 +230,9 @@
       },
       "native_libraries_compatible": {
         "name": "Native libraries compatible"
+      },
+      "stream_healthy": {
+        "name": "Stream healthy"
       },
       "video_frames_received": {
         "name": "Video frames received"
@@ -193,6 +254,12 @@
       "helper_version": {
         "name": "Helper version"
       },
+      "humidity": {
+        "name": "Humidity"
+      },
+      "illuminance": {
+        "name": "Illuminance"
+      },
       "integration_status": {
         "name": "Integration status",
         "state": {
@@ -208,14 +275,29 @@
       "runtime_status": {
         "name": "Runtime status"
       },
+      "reconnect_count": {
+        "name": "Reconnect count"
+      },
+      "sound_level": {
+        "name": "Sound level"
+      },
       "stream_bitrate": {
         "name": "Stream bitrate"
       },
       "stream_codec": {
         "name": "Stream codec"
       },
+      "stream_fps": {
+        "name": "Stream FPS"
+      },
       "stream_profile": {
         "name": "Stream profile"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "wifi_signal": {
+        "name": "Wi-Fi signal"
       }
     }
   }

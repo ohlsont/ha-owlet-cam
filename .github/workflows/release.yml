@@ -30,13 +30,38 @@ jobs:
           tag=os.environ['GITHUB_REF_NAME'];
           assert tag == 'v'+v, (tag,v)"
       - name: Build HACS archive
+        run: |
+          mkdir -p dist
+          git archive --format=zip --output=dist/ha-owlet-cam.zip HEAD \
+            custom_components/owlet_cam hacs.json LICENSE README.md SECURITY.md \
+            CHANGELOG.md TEST_REPORT.md REFERENCE_VERSIONS.md
+      - name: Build reproducible proprietary-free AArch64 helper
+        run: |
+          docker run --rm --network=bridge \
+            -e HELPER_VERSION="${GITHUB_REF_NAME#v}" \
+            -v "$PWD:/source:ro" \
+            -v "$PWD/dist:/output" \
+            debian@sha256:1710bde34461551a19a47c787885ec9ad7058d9a5bead2affb8d088fa2f8502b \
+            /bin/sh /source/scripts/build_arm64_helper_in_container.sh
+      - name: Create release metadata and notes
+        run: |
+          uv run python scripts/create_release_metadata.py \
+            --version "${GITHUB_REF_NAME#v}" \
+            --output-directory dist \
+            dist/ha-owlet-cam.zip dist/owlet-cam-helper-aarch64.tar.gz
+          uv run python scripts/extract_release_notes.py \
+            --version "${GITHUB_REF_NAME#v}" \
+            --output dist/release-notes.md
+      - name: Inspect release archives
         run: >-
-          git archive --format=zip --output=ha-owlet-cam.zip HEAD
-          custom_components/owlet_cam hacs.json LICENSE README.md SECURITY.md
-          CHANGELOG.md TEST_REPORT.md REFERENCE_VERSIONS.md
-      - name: Inspect archive
-        run: unzip -l ha-owlet-cam.zip
+          uv run python scripts/inspect_release_assets.py
+          dist/ha-owlet-cam.zip dist/owlet-cam-helper-aarch64.tar.gz
       - uses: softprops/action-gh-release@v2
         with:
-          files: ha-owlet-cam.zip
-          generate_release_notes: true
+          body_path: dist/release-notes.md
+          files: |
+            dist/ha-owlet-cam.zip
+            dist/owlet-cam-helper-aarch64.tar.gz
+            dist/checksums.txt
+            dist/sbom.spdx.json
+            dist/license-manifest.json

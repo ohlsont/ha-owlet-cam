@@ -1,33 +1,55 @@
 """Config-entry lifecycle tests."""
 
+import logging
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.owlet_cam import CONFIG_SCHEMA
 from custom_components.owlet_cam.api.exceptions import (
     OwletAuthenticationError,
     OwletConnectionError,
 )
-from custom_components.owlet_cam.api.models import OwletCloudMetadata
+from custom_components.owlet_cam.api.models import (
+    CameraSensors,
+    CameraStatus,
+    OwletCloudMetadata,
+)
 from custom_components.owlet_cam.const import (
+    CONF_BRIDGE_CAMERA_ID,
+    CONF_BRIDGE_PASSWORD,
+    CONF_BRIDGE_URL,
+    CONF_BRIDGE_USERNAME,
     CONF_CAMERA_DSN,
     CONF_CAMERA_NAME,
     CONF_EMAIL,
     CONF_MODE,
     CONF_PASSWORD,
     CONF_REGION,
+    CONF_VERIFY_TLS,
     DOMAIN,
     MODE_DEVELOPMENT,
     MODE_EMBEDDED,
+    MODE_EXTERNAL,
     REGION_EUROPE,
 )
 
 ENTITY_ID = "sensor.owlet_cam_integration_status"
 DSN = "OCD123456789"
+
+
+def test_yaml_configuration_is_reported(caplog: pytest.LogCaptureFixture) -> None:
+    """A YAML block is reported and never used to configure an entry."""
+    assert CONFIG_SCHEMA({}) == {}
+    with caplog.at_level(logging.ERROR):
+        config = CONFIG_SCHEMA({DOMAIN: {}})
+    assert config == {DOMAIN: {}}
+    assert "does not support YAML setup" in caplog.text
 
 
 def _entry() -> MockConfigEntry:
@@ -52,6 +74,23 @@ def _embedded_entry() -> MockConfigEntry:
             CONF_CAMERA_NAME: "Nursery",
         },
         unique_id=DSN,
+    )
+
+
+def _external_entry() -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="Nursery",
+        data={
+            CONF_MODE: MODE_EXTERNAL,
+            CONF_BRIDGE_URL: "https://bridge.example.invalid:8088",
+            CONF_BRIDGE_USERNAME: "api-user",
+            CONF_BRIDGE_PASSWORD: "fixture-bridge-password",
+            CONF_VERIFY_TLS: True,
+            CONF_BRIDGE_CAMERA_ID: "nursery",
+            CONF_CAMERA_NAME: "Nursery",
+        },
+        unique_id="bridge-fixture",
     )
 
 
@@ -143,6 +182,54 @@ async def test_embedded_setup_unload_and_reload(hass: HomeAssistant) -> None:
     assert not hass.states.async_entity_ids("camera")
     assert validate.await_count == 2
     assert schedule_restore.call_count == 2
+
+
+async def test_external_setup_exposes_native_camera_and_room_entities(
+    hass: HomeAssistant,
+) -> None:
+    entry = _external_entry()
+    entry.add_to_hass(hass)
+    with patch("custom_components.owlet_cam.OwletHttpBridgeClient") as client_class:
+        client = client_class.return_value
+        client.async_get_status = AsyncMock(
+            return_value=CameraStatus(online=True, stream_healthy=True)
+        )
+        client.async_get_sensors = AsyncMock(
+            return_value=CameraSensors(
+                temperature=21.5,
+                humidity=48,
+                sound_level=33,
+                illuminance=7,
+                wifi_signal=-61,
+            )
+        )
+        client.async_get_stream_source = AsyncMock(
+            return_value="rtsp://bridge.example.invalid:18554/nursery"
+        )
+        client.async_get_snapshot = AsyncMock(return_value=b"\xff\xd8fixture\xff\xd9")
+
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        expected_states = {
+            "camera.nursery": "streaming",
+            "sensor.nursery_temperature": "21.5",
+            "sensor.nursery_humidity": "48",
+            "binary_sensor.nursery_bridge_online": "on",
+            "binary_sensor.nursery_camera_online": "on",
+            "binary_sensor.nursery_stream_healthy": "on",
+        }
+        for entity_id, expected_state in expected_states.items():
+            state = hass.states.get(entity_id)
+            assert state is not None
+            assert state.state == expected_state
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert not hass.states.async_entity_ids("camera")
+    assert not hass.states.async_entity_ids("sensor")
+    assert not hass.states.async_entity_ids("binary_sensor")
 
 
 async def test_temporary_outage_uses_setup_retry(hass: HomeAssistant) -> None:

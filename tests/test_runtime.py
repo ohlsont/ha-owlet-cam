@@ -19,6 +19,8 @@ from urllib.parse import urlsplit
 import pytest
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.owlet_cam.api.cloud import OwletCloudClient
 from custom_components.owlet_cam.api.exceptions import (
@@ -30,7 +32,10 @@ from custom_components.owlet_cam.api.exceptions import (
 from custom_components.owlet_cam.api.models import OwletCameraCredentials
 from custom_components.owlet_cam.runtime.apk import OwletArchiveError
 from custom_components.owlet_cam.runtime.downloader import (
+    RELEASE_BASE_URL,
+    OwletRuntimeDownloadError,
     OwletRuntimeInstallError,
+    async_ensure_release_runtime,
     install_runtime_archive,
 )
 from custom_components.owlet_cam.runtime.elf import (
@@ -1690,6 +1695,7 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
     second = tmp_path / "second.tar.gz"
 
     first_hash = build_runtime_archive(
+        version="0.7.0-test",
         frame_probe=frame_probe,
         snapshot_capture=snapshot_capture,
         stream_capture=stream_capture,
@@ -1699,6 +1705,7 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
         output=first,
     )
     second_hash = build_runtime_archive(
+        version="0.7.0-test",
         frame_probe=frame_probe,
         snapshot_capture=snapshot_capture,
         stream_capture=stream_capture,
@@ -1731,7 +1738,7 @@ def test_helper_runtime_archive_is_reproducible_and_proprietary_free(
         runtime_parent=tmp_path / "runtime-install",
     )
     assert installed.root.name == "current"
-    assert installed.version == "0.6.0-dev"
+    assert installed.version == "0.7.0-test"
 
 
 def test_runtime_installer_rejects_bad_checksum_and_traversal(tmp_path: Path) -> None:
@@ -1757,6 +1764,137 @@ def test_runtime_installer_rejects_bad_checksum_and_traversal(tmp_path: Path) ->
         )
 
     assert not (tmp_path / "escape").exists()
+
+
+def _release_runtime_archive(
+    tmp_path: Path, *, version: str = "0.7.0", architecture: str = "aarch64"
+) -> tuple[Path, str]:
+    archive_path = tmp_path / "owlet-cam-helper-aarch64.tar.gz"
+    files = {
+        name: f"open-source:{name}".encode()
+        for name in (
+            "LICENSES/AOSP-NOTICE.html.gz",
+            "LICENSES/OWLET-CAM-MIT.txt",
+            "bin/frame_probe",
+            "bin/probe_libraries",
+            "bin/snapshot_capture",
+            "bin/stream_capture",
+            "runtime/bin/linker64",
+            "runtime/lib64/libc.so",
+            "runtime/lib64/libdl.so",
+            "runtime/lib64/libm.so",
+        )
+    }
+    manifest = {
+        "schema_version": 1,
+        "version": version,
+        "architecture": architecture,
+        "files": {
+            name: hashlib.sha256(content).hexdigest() for name, content in files.items()
+        },
+    }
+    files["runtime-manifest.json"] = json.dumps(manifest).encode()
+    with tarfile.open(archive_path, "w:gz") as archive:
+        for name, content in files.items():
+            member = tarfile.TarInfo(name)
+            member.size = len(content)
+            archive.addfile(member, io.BytesIO(content))
+    return archive_path, hashlib.sha256(archive_path.read_bytes()).hexdigest()
+
+
+async def test_downloads_checksum_pinned_release_runtime(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    tmp_path: Path,
+) -> None:
+    archive, checksum = _release_runtime_archive(tmp_path)
+    release = f"{RELEASE_BASE_URL}/v0.7.0"
+    aioclient_mock.get(
+        f"{release}/checksums.txt",
+        text=f"{checksum}  owlet-cam-helper-aarch64.tar.gz\n",
+    )
+    aioclient_mock.get(
+        f"{release}/owlet-cam-helper-aarch64.tar.gz",
+        content=archive.read_bytes(),
+    )
+
+    installed = await async_ensure_release_runtime(
+        hass,
+        async_get_clientsession(hass),
+        version="0.7.0",
+        architecture="aarch64",
+        runtime_parent=tmp_path / "installed",
+    )
+
+    assert installed.version == "0.7.0"
+    assert installed.architecture == "aarch64"
+    assert installed.root.name == "current"
+    assert not list((tmp_path / "installed").glob("*.partial"))
+
+
+async def test_release_runtime_rejects_checksum_and_version_mismatch(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    tmp_path: Path,
+) -> None:
+    archive, _checksum = _release_runtime_archive(tmp_path, version="0.6.0")
+    release = f"{RELEASE_BASE_URL}/v0.7.0"
+    actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+    aioclient_mock.get(
+        f"{release}/checksums.txt",
+        text=f"{'0' * 64}  owlet-cam-helper-aarch64.tar.gz\n",
+    )
+    aioclient_mock.get(
+        f"{release}/owlet-cam-helper-aarch64.tar.gz",
+        content=archive.read_bytes(),
+    )
+    with pytest.raises(OwletRuntimeInstallError, match="checksum"):
+        await async_ensure_release_runtime(
+            hass,
+            async_get_clientsession(hass),
+            version="0.7.0",
+            architecture="aarch64",
+            runtime_parent=tmp_path / "bad-checksum",
+        )
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        f"{release}/checksums.txt",
+        text=f"{actual}  owlet-cam-helper-aarch64.tar.gz\n",
+    )
+    aioclient_mock.get(
+        f"{release}/owlet-cam-helper-aarch64.tar.gz",
+        content=archive.read_bytes(),
+    )
+    with pytest.raises(OwletRuntimeInstallError, match="does not match"):
+        await async_ensure_release_runtime(
+            hass,
+            async_get_clientsession(hass),
+            version="0.7.0",
+            architecture="aarch64",
+            runtime_parent=tmp_path / "bad-version",
+        )
+
+
+async def test_release_runtime_reports_unavailable_without_url_leak(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    tmp_path: Path,
+) -> None:
+    release = f"{RELEASE_BASE_URL}/v0.7.0"
+    aioclient_mock.get(f"{release}/checksums.txt", status=404)
+
+    with pytest.raises(OwletRuntimeDownloadError) as caught:
+        await async_ensure_release_runtime(
+            hass,
+            async_get_clientsession(hass),
+            version="0.7.0",
+            architecture="aarch64",
+            runtime_parent=tmp_path / "unavailable",
+        )
+
+    assert "github" not in str(caught.value).casefold()
+    assert "http" not in str(caught.value).casefold()
 
 
 def test_manager_prepares_and_reuses_safe_user_extraction(
@@ -1852,7 +1990,10 @@ async def test_manager_deletes_only_proprietary_material(
 @pytest.mark.parametrize(
     ("failure", "code"),
     [
-        (OwletRuntimeError("missing_runtime", "safe"), "missing_runtime"),
+        (
+            OwletRuntimeError("invalid_runtime_storage", "safe"),
+            "invalid_runtime_storage",
+        ),
         (OwletArchiveError("safe"), "invalid_apk"),
         (ElfInspectionError("safe"), "library_incompatible"),
     ],
@@ -1875,3 +2016,37 @@ async def test_manager_records_safe_runtime_probe_failures(
 
     assert manager.snapshot.status == "error"
     assert manager.snapshot.last_error_code == code
+
+
+async def test_manager_fetches_release_when_runtime_is_missing(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path,
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+    )
+    prepared = PreparedRuntime(
+        manifest=RuntimeManifest(
+            version="0.6.0-test", architecture="aarch64", root=tmp_path
+        ),
+        library_directory=tmp_path,
+        libraries=(),
+        source_sha256="0" * 64,
+    )
+    expected = (prepared, bytearray(b"fixture-sdk-key"))
+    with (
+        patch.object(
+            manager,
+            "_prepare_sync",
+            side_effect=[OwletRuntimeError("missing_runtime", "safe"), expected],
+        ),
+        patch.object(
+            manager, "_async_install_release_runtime", new=AsyncMock()
+        ) as install,
+    ):
+        result = await manager._async_prepare_runtime_files()
+
+    assert result == expected
+    install.assert_awaited_once_with()

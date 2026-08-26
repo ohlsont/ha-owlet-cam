@@ -44,7 +44,8 @@ independent Milestone 6 builds produced the same byte-for-byte archive.
 
 `scripts/build_helper_runtime.py` now creates a deterministic `tar.gz` with a
 per-file runtime manifest, the minimal open-source runtime, and complete AOSP
-and integration licence notices. Its output is a local test artefact until the
-same build is wired into the release workflow and the Yellow gate passes. No
-asset may contain the user's application, ThroughTek/Owlet libraries, SDK key,
-or camera credentials.
+and integration licence notices. The helper and release workflows now run this
+exact pinned build, package twice to require reproducibility, and inspect the
+asset before upload. The first release-hosted download gate is still
+unperformed. No asset may contain the user's application, ThroughTek/Owlet
+libraries, SDK key, or camera credentials.

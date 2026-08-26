@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Final
 
 ROOT: Final = Path(__file__).resolve().parents[1]
-VERSION: Final = "0.6.0-dev"
 ARCHITECTURE: Final = "aarch64"
 AOSP_COMMIT: Final = "070571b455076f77a01c7b07154a15e545d2b428"
 AOSP_APEX_SHA256: Final = (
@@ -34,6 +33,7 @@ _RUNTIME_FILES: Final = {
 
 def build_runtime_archive(
     *,
+    version: str,
     frame_probe: Path,
     snapshot_capture: Path,
     stream_capture: Path,
@@ -82,7 +82,7 @@ def build_runtime_archive(
 
         manifest = {
             "schema_version": 1,
-            "version": VERSION,
+            "version": version,
             "architecture": ARCHITECTURE,
             "files": hashes,
             "build": {
@@ -153,6 +153,7 @@ def _sha256(path: Path) -> str:
 def main() -> int:
     """Build from explicit non-secret paths."""
     parser = argparse.ArgumentParser()
+    parser.add_argument("--version", required=True)
     parser.add_argument("--frame-probe", type=Path, required=True)
     parser.add_argument("--snapshot-capture", type=Path, required=True)
     parser.add_argument("--stream-capture", type=Path, required=True)
@@ -162,6 +163,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     checksum = build_runtime_archive(
+        version=args.version,
         frame_probe=args.frame_probe,
         snapshot_capture=args.snapshot_capture,
         stream_capture=args.stream_capture,

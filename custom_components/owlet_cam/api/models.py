@@ -44,3 +44,47 @@ class OwletCameraData:
 
     camera_id: str
     name: str
+
+
+@dataclass(frozen=True, slots=True)
+class BridgeInfo:
+    """Non-secret bridge compatibility and capability result."""
+
+    api_family: str
+    api_version: str | None
+    supports_snapshots: bool
+    supports_sensors: bool
+
+
+@dataclass(frozen=True, slots=True)
+class BridgeCamera:
+    """Safe camera metadata returned by the bridge."""
+
+    camera_id: str
+    name: str
+    online: bool
+    stream_healthy: bool
+    stream_codec: str | None
+    received_bytes: int | None
+    rtsp_url: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class CameraStatus:
+    """Cached external camera status."""
+
+    online: bool
+    stream_healthy: bool
+    stream_fps: float | None = None
+    reconnect_count: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CameraSensors:
+    """Optional metric room-sensor values from one external camera."""
+
+    temperature: float | None = None
+    humidity: float | None = None
+    sound_level: float | None = None
+    illuminance: float | None = None
+    wifi_signal: float | None = None

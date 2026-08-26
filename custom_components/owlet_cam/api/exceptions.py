@@ -66,3 +66,15 @@ class OwletInvalidDSNError(OwletCamError):
         """Create a safe DSN validation error."""
         super().__init__("The camera DSN format is invalid")
         self.confused_zero = confused_zero
+
+
+class OwletBridgeAuthenticationError(OwletCamError):
+    """The external bridge rejected configured API credentials."""
+
+
+class OwletBridgeConnectionError(OwletCamError):
+    """The external bridge could not be reached or returned malformed data."""
+
+
+class OwletBridgeCompatibilityError(OwletCamError):
+    """The external service is not a supported Owlet bridge API."""

@@ -17,11 +17,12 @@ from collections.abc import AsyncIterable, Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from homeassistant.components.ffmpeg import get_ffmpeg_manager
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, Event, HomeAssistant, callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from ..api.cloud import OwletCloudClient
 from ..api.exceptions import (
@@ -31,6 +32,7 @@ from ..api.exceptions import (
     OwletConnectionError,
     OwletRateLimitError,
 )
+from ..const import EXPECTED_HELPER_VERSION
 from .apk import (
     REQUIRED_LIBRARIES,
     SUPPORTED_ARCHIVE_SUFFIXES,
@@ -379,9 +381,7 @@ class OwletRuntimeManager:
                 )
             self._set_status("preparing")
             try:
-                prepared, sdk_key = await self._hass.async_add_executor_job(
-                    self._prepare_sync
-                )
+                prepared, sdk_key = await self._async_prepare_runtime_files()
                 self._replace_sdk_key(sdk_key)
                 command, environment = self._helper_invocation(
                     prepared, "probe_libraries"
@@ -442,6 +442,70 @@ class OwletRuntimeManager:
                 raise OwletRuntimeError(
                     "library_probe_failed", "Native libraries could not be loaded"
                 ) from err
+
+    async def _async_prepare_runtime_files(
+        self,
+    ) -> tuple[PreparedRuntime, bytearray]:
+        """Prepare local files, fetching only the exact missing release runtime."""
+        try:
+            prepared = cast(
+                tuple[PreparedRuntime, bytearray],
+                await self._hass.async_add_executor_job(self._prepare_sync),
+            )
+        except OwletRuntimeError as err:
+            if err.code not in {
+                "missing_runtime",
+                "invalid_runtime_manifest",
+                "runtime_checksum_mismatch",
+            }:
+                raise
+            await self._async_install_release_runtime()
+            return cast(
+                tuple[PreparedRuntime, bytearray],
+                await self._hass.async_add_executor_job(self._prepare_sync),
+            )
+        manifest = prepared[0].manifest
+        if (
+            manifest.version != EXPECTED_HELPER_VERSION
+            and not manifest.version.endswith("-test")
+        ):
+            await self._async_install_release_runtime()
+            return cast(
+                tuple[PreparedRuntime, bytearray],
+                await self._hass.async_add_executor_job(self._prepare_sync),
+            )
+        return prepared
+
+    async def _async_install_release_runtime(self) -> None:
+        """Install a checksum-verified release without exposing URLs or details."""
+        from .downloader import (
+            OwletRuntimeDownloadError,
+            OwletRuntimeInstallError,
+            async_ensure_release_runtime,
+        )
+
+        try:
+            await async_ensure_release_runtime(
+                self._hass,
+                async_get_clientsession(self._hass),
+                version=EXPECTED_HELPER_VERSION,
+                architecture=SUPPORTED_MACHINE,
+                runtime_parent=self._root / "runtime",
+            )
+        except OwletRuntimeInstallError as err:
+            code = (
+                "runtime_checksum_mismatch"
+                if "checksum" in str(err).casefold()
+                else "runtime_download_failed"
+            )
+            raise OwletRuntimeError(
+                code, "The helper runtime release failed its integrity gates"
+            ) from err
+        except OwletRuntimeDownloadError as err:
+            raise OwletRuntimeError(
+                "runtime_download_failed",
+                "The helper runtime release could not be installed",
+            ) from err
 
     async def async_run_frame_probe(self) -> FrameProbeResult:
         """Fetch fresh credentials and receive a bounded set of real frames."""

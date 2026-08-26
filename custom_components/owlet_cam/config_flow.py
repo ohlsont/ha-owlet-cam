@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from hashlib import sha256
 from typing import Any
 
 import voluptuous as vol
@@ -13,16 +14,26 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .api.bridge import OwletHttpBridgeClient, normalize_bridge_url
 from .api.cloud import OwletCloudClient, normalize_camera_dsn
 from .api.exceptions import (
     OwletAuthenticationError,
+    OwletBridgeAuthenticationError,
+    OwletBridgeCompatibilityError,
+    OwletBridgeConnectionError,
     OwletCameraNotFoundError,
     OwletConnectionError,
     OwletInvalidDSNError,
     OwletRateLimitError,
     OwletUnsupportedRegionError,
 )
+from .api.models import BridgeCamera
 from .const import (
+    CONF_BRIDGE_CAMERA_ID,
+    CONF_BRIDGE_PASSWORD,
+    CONF_BRIDGE_TIMEOUT,
+    CONF_BRIDGE_URL,
+    CONF_BRIDGE_USERNAME,
     CONF_CAMERA_DSN,
     CONF_CAMERA_NAME,
     CONF_DEBUG_LOGGING,
@@ -38,9 +49,12 @@ from .const import (
     CONF_RECONNECT_BACKOFF,
     CONF_REGION,
     CONF_RETAIN_APPLICATION,
+    CONF_RTSP_OVERRIDE,
     CONF_RUNTIME_CHANNEL,
     CONF_STREAM_QUALITY,
     CONF_UPDATE_INTERVAL,
+    CONF_VERIFY_TLS,
+    DEFAULT_BRIDGE_TIMEOUT,
     DEFAULT_DEBUG_LOGGING,
     DEFAULT_ENABLE_AUDIO,
     DEFAULT_EXPERIMENTAL_LOCAL_SENSORS,
@@ -53,6 +67,7 @@ from .const import (
     DEFAULT_RUNTIME_CHANNEL,
     DEFAULT_STREAM_QUALITY,
     DEFAULT_UPDATE_INTERVAL,
+    DEFAULT_VERIFY_TLS,
     DEV_MODE_ENV,
     DOMAIN,
     MODE_DEVELOPMENT,
@@ -71,6 +86,8 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
     """Handle an Owlet Cam config flow."""
 
     VERSION = 1
+    _external_data: dict[str, Any] | None = None
+    _external_cameras: list[BridgeCamera] | None = None
 
     @staticmethod
     @callback
@@ -97,7 +114,7 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
                     data={CONF_MODE: MODE_DEVELOPMENT},
                 )
             if mode == MODE_EXTERNAL:
-                return self.async_abort(reason="external_not_available")
+                return await self.async_step_external()
             return await self.async_step_embedded()
 
         modes = [MODE_EXTERNAL, MODE_EMBEDDED]
@@ -108,6 +125,123 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
             data_schema=vol.Schema(
                 {vol.Required(CONF_MODE, default=MODE_EXTERNAL): _select(modes, "mode")}
             ),
+        )
+
+    async def async_step_external(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Validate a bridge and enumerate its cameras."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data, cameras, error = await self._async_validate_external(user_input)
+            if error is None:
+                self._external_data = data
+                self._external_cameras = cameras
+                if len(cameras) == 1:
+                    return await self._async_create_external_entry(cameras[0])
+                return await self.async_step_external_camera()
+            errors["base"] = error
+        return self.async_show_form(
+            step_id="external",
+            data_schema=_external_schema(user_input),
+            errors=errors,
+        )
+
+    async def async_step_external_camera(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Select exactly one camera when the bridge exposes several."""
+        if self._external_data is None or not self._external_cameras:
+            return self.async_abort(reason="cannot_connect")
+        choices = {camera.camera_id: camera.name for camera in self._external_cameras}
+        if user_input is not None:
+            selected = str(user_input[CONF_BRIDGE_CAMERA_ID])
+            camera = next(
+                camera
+                for camera in self._external_cameras
+                if camera.camera_id == selected
+            )
+            return await self._async_create_external_entry(camera)
+        return self.async_show_form(
+            step_id="external_camera",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_BRIDGE_CAMERA_ID): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(value=value, label=label)
+                                for value, label in choices.items()
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def _async_create_external_entry(self, camera: BridgeCamera) -> FlowResult:
+        """Create one stable per-camera bridge entry."""
+        if self._external_data is None:
+            return self.async_abort(reason="cannot_connect")
+        identity = f"{self._external_data[CONF_BRIDGE_URL]}|{camera.camera_id}"
+        await self.async_set_unique_id(
+            f"bridge_{sha256(identity.encode()).hexdigest()}"
+        )
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(
+            title=camera.name,
+            data={
+                CONF_MODE: MODE_EXTERNAL,
+                **self._external_data,
+                CONF_BRIDGE_CAMERA_ID: camera.camera_id,
+                CONF_CAMERA_NAME: camera.name,
+            },
+        )
+
+    async def _async_validate_external(
+        self, user_input: dict[str, Any]
+    ) -> tuple[dict[str, Any], list[BridgeCamera], str | None]:
+        """Return safe normalized bridge data, cameras, and any form error."""
+        try:
+            base_url = normalize_bridge_url(str(user_input[CONF_BRIDGE_URL]))
+            username = str(user_input.get(CONF_BRIDGE_USERNAME, "")).strip()
+            password = str(user_input.get(CONF_BRIDGE_PASSWORD, ""))
+            verify_tls = bool(user_input.get(CONF_VERIFY_TLS, DEFAULT_VERIFY_TLS))
+            rtsp_override = str(user_input.get(CONF_RTSP_OVERRIDE, "")).strip()
+            client = OwletHttpBridgeClient(
+                async_get_clientsession(self.hass),
+                base_url=base_url,
+                username=username or None,
+                password_or_token=password or None,
+                verify_tls=verify_tls,
+                rtsp_override=rtsp_override or None,
+            )
+            await client.async_validate()
+            cameras = await client.async_get_cameras()
+            if not cameras:
+                return {}, [], "no_cameras"
+            if any(camera.rtsp_url is None for camera in cameras):
+                return {}, [], "no_stream"
+        except ValueError:
+            return {}, [], "invalid_bridge_url"
+        except OwletBridgeAuthenticationError:
+            return {}, [], "invalid_bridge_auth"
+        except OwletBridgeCompatibilityError:
+            return {}, [], "unsupported_bridge"
+        except OwletBridgeConnectionError:
+            return {}, [], "cannot_connect_bridge"
+        return (
+            {
+                CONF_BRIDGE_URL: base_url,
+                CONF_BRIDGE_USERNAME: username,
+                CONF_BRIDGE_PASSWORD: password,
+                CONF_VERIFY_TLS: verify_tls,
+                CONF_RTSP_OVERRIDE: rtsp_override,
+            },
+            cameras,
+            None,
         )
 
     async def async_step_embedded(
@@ -147,6 +281,8 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
     ) -> FlowResult:
         """Validate replacement account credentials and reload once."""
         entry = self._get_reauth_entry()
+        if entry.data.get(CONF_MODE) == MODE_EXTERNAL:
+            return await self.async_step_reauth_bridge(user_input)
         errors: dict[str, str] = {}
         if user_input is not None:
             candidate = {
@@ -183,12 +319,54 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
             errors=errors,
         )
 
+    async def async_step_reauth_bridge(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Validate replacement external bridge credentials and reload once."""
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            candidate = {
+                **entry.data,
+                CONF_BRIDGE_USERNAME: user_input.get(CONF_BRIDGE_USERNAME, ""),
+                CONF_BRIDGE_PASSWORD: user_input.get(CONF_BRIDGE_PASSWORD, ""),
+            }
+            data, cameras, error = await self._async_validate_external(candidate)
+            if error is None and any(
+                camera.camera_id == entry.data[CONF_BRIDGE_CAMERA_ID]
+                for camera in cameras
+            ):
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={
+                        CONF_BRIDGE_USERNAME: data[CONF_BRIDGE_USERNAME],
+                        CONF_BRIDGE_PASSWORD: data[CONF_BRIDGE_PASSWORD],
+                    },
+                )
+            errors["base"] = error or "camera_not_found"
+        return self.async_show_form(
+            step_id="reauth_bridge",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_BRIDGE_USERNAME,
+                        default=entry.data.get(CONF_BRIDGE_USERNAME, ""),
+                    ): str,
+                    vol.Required(CONF_BRIDGE_PASSWORD): str,
+                }
+            ),
+            errors=errors,
+        )
+
     async def async_step_reconfigure(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
         """Revalidate required camera configuration and reload once."""
         entry = self._get_reconfigure_entry()
+        if entry.data.get(CONF_MODE) == MODE_EXTERNAL:
+            return await self.async_step_reconfigure_bridge(user_input)
         errors: dict[str, str] = {}
         if user_input is not None:
             data, error = await self._async_validate_embedded(user_input)
@@ -207,6 +385,48 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=_embedded_schema(user_input or defaults),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure_bridge(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Revalidate the existing camera against updated bridge settings."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            candidate = {
+                **entry.data,
+                **user_input,
+                CONF_BRIDGE_PASSWORD: user_input.get(
+                    CONF_BRIDGE_PASSWORD, entry.data.get(CONF_BRIDGE_PASSWORD, "")
+                ),
+            }
+            data, cameras, error = await self._async_validate_external(candidate)
+            selected = next(
+                (
+                    camera
+                    for camera in cameras
+                    if camera.camera_id == entry.data[CONF_BRIDGE_CAMERA_ID]
+                ),
+                None,
+            )
+            if error is None and selected is not None:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    title=selected.name,
+                    data_updates={
+                        **data,
+                        CONF_CAMERA_NAME: selected.name,
+                    },
+                )
+            errors["base"] = error or "camera_not_found"
+        defaults = dict(entry.data)
+        defaults.pop(CONF_BRIDGE_PASSWORD, None)
+        return self.async_show_form(
+            step_id="reconfigure_bridge",
+            data_schema=_external_schema(user_input or defaults),
             errors=errors,
         )
 
@@ -277,6 +497,8 @@ class OwletCamOptionsFlow(config_entries.OptionsFlow):
             self._pending.update(user_input)
             if self._config_entry.data.get(CONF_MODE) == MODE_EMBEDDED:
                 return await self.async_step_embedded()
+            if self._config_entry.data.get(CONF_MODE) == MODE_EXTERNAL:
+                return await self.async_step_external()
             return self._finish()
 
         options = self._config_entry.options
@@ -370,6 +592,35 @@ class OwletCamOptionsFlow(config_entries.OptionsFlow):
             ),
         )
 
+    async def async_step_external(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Configure external bridge request and stream overrides."""
+        if user_input is not None:
+            self._pending.update(user_input)
+            return self._finish()
+        options = self._config_entry.options
+        return self.async_show_form(
+            step_id="external",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_BRIDGE_TIMEOUT,
+                        default=options.get(
+                            CONF_BRIDGE_TIMEOUT, DEFAULT_BRIDGE_TIMEOUT
+                        ),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=120)),
+                    vol.Optional(
+                        CONF_RTSP_OVERRIDE,
+                        default=options.get(
+                            CONF_RTSP_OVERRIDE,
+                            self._config_entry.data.get(CONF_RTSP_OVERRIDE, ""),
+                        ),
+                    ): str,
+                }
+            ),
+        )
+
     def _finish(self) -> FlowResult:
         """Persist options and schedule exactly one entry reload."""
         self.hass.config_entries.async_schedule_reload(self._config_entry.entry_id)
@@ -398,6 +649,28 @@ def _embedded_schema(defaults: dict[str, Any] | None) -> vol.Schema:
             vol.Required(
                 CONF_CAMERA_NAME, default=values.get(CONF_CAMERA_NAME, "Owlet Cam")
             ): str,
+        }
+    )
+
+
+def _external_schema(defaults: dict[str, Any] | None) -> vol.Schema:
+    values = defaults or {}
+    return vol.Schema(
+        {
+            vol.Required(CONF_BRIDGE_URL, default=values.get(CONF_BRIDGE_URL, "")): str,
+            vol.Optional(
+                CONF_BRIDGE_USERNAME,
+                default=values.get(CONF_BRIDGE_USERNAME, ""),
+            ): str,
+            vol.Optional(CONF_BRIDGE_PASSWORD): str,
+            vol.Optional(
+                CONF_RTSP_OVERRIDE,
+                default=values.get(CONF_RTSP_OVERRIDE, ""),
+            ): str,
+            vol.Required(
+                CONF_VERIFY_TLS,
+                default=values.get(CONF_VERIFY_TLS, DEFAULT_VERIFY_TLS),
+            ): bool,
         }
     )
 

@@ -1,14 +1,14 @@
 {
   "domain": "owlet_cam",
   "name": "Owlet Cam",
-  "version": "0.2.0",
+  "after_dependencies": ["frontend", "panel_custom"],
   "codeowners": ["@ohlsont"],
   "config_flow": true,
   "dependencies": ["ffmpeg", "http"],
-  "after_dependencies": ["frontend", "panel_custom"],
   "documentation": "https://github.com/ohlsont/ha-owlet-cam",
-  "issue_tracker": "https://github.com/ohlsont/ha-owlet-cam/issues",
   "integration_type": "device",
   "iot_class": "cloud_polling",
-  "requirements": []
+  "issue_tracker": "https://github.com/ohlsont/ha-owlet-cam/issues",
+  "requirements": [],
+  "version": "0.7.0"
 }

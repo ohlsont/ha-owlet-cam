@@ -19,13 +19,19 @@ async def test_diagnostics_redact_every_secret_fixture(hass: HomeAssistant) -> N
         "auth_key": "fixture-" + "auth-key",
         "av_password": "fixture-" + "av-password",
         "sdk_key": "fixture-" + "sdk-key",
+        "bridge_password": "fixture-" + "bridge-password",
         "bridge_token": "fixture-" + "bridge-token",
     }
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Diagnostics",
         data={CONF_MODE: MODE_DEVELOPMENT, **secrets},
-        options={"stream_path_token": "fixture-" + "stream-path"},
+        options={
+            "stream_path_token": "fixture-" + "stream-path",
+            "explicit_rtsp_source": (
+                "rtsp://fixture-user:fixture-stream-secret@bridge.invalid/camera"
+            ),
+        },
         unique_id="diagnostics",
     )
     entry.add_to_hass(hass)
@@ -35,6 +41,10 @@ async def test_diagnostics_redact_every_secret_fixture(hass: HomeAssistant) -> N
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
     serialized = json.dumps(diagnostics, sort_keys=True)
 
-    for secret in (*secrets.values(), "fixture-stream-path"):
+    for secret in (
+        *secrets.values(),
+        "fixture-stream-path",
+        "fixture-stream-secret",
+    ):
         assert secret not in serialized
     assert "**REDACTED**" in serialized

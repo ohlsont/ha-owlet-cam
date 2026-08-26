@@ -34,6 +34,30 @@ class OwletCamCloudEntity(CoordinatorEntity[OwletCamCoordinator]):
         )
 
 
+class OwletCamBridgeEntity(CoordinatorEntity[OwletCamCoordinator]):
+    """Base for external bridge entities backed only by coordinator data."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: OwletCamCoordinator,
+        *,
+        camera_id: str,
+        camera_name: str,
+        key: str,
+    ) -> None:
+        super().__init__(coordinator)
+        self._camera_id = camera_id
+        self._attr_unique_id = f"bridge_{camera_id}_{key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"bridge_{camera_id}")},
+            name=camera_name,
+            manufacturer="Owlet",
+            model="Owlet Cam via external bridge",
+        )
+
+
 class OwletCamRuntimeEntity(Entity):
     """Base for entities backed only by cached runtime-manager state."""
 

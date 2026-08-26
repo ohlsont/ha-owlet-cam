@@ -3,12 +3,14 @@ set -eu
 
 # Run inside the pinned Debian container documented in helper/build/README.md:
 # docker run --rm --network=bridge \
+#   -e HELPER_VERSION=0.7.0 \
 #   -v "$PWD:/source:ro" -v "/absolute/output:/output" \
 #   debian@sha256:1710bde34461551a19a47c787885ec9ad7058d9a5bead2affb8d088fa2f8502b \
 #   /bin/sh /source/scripts/build_arm64_helper_in_container.sh
 
 SOURCE_ROOT=/source
 OUTPUT_ROOT=/output
+HELPER_VERSION=${HELPER_VERSION:?HELPER_VERSION must match the integration release}
 AOSP_COMMIT=070571b455076f77a01c7b07154a15e545d2b428
 APEX_SHA256=83bf0dce249728dae48149b80d28b48115c54adad95a352120d58a6ac669d1fc
 APEX_URL="https://android.googlesource.com/platform/prebuilts/runtime/+/${AOSP_COMMIT}/mainline/runtime/apex/com.android.runtime-arm64.apex?format=TEXT"
@@ -69,13 +71,27 @@ clang $COMMON_FLAGS -DSTREAM_CAPTURE "$SOURCE_ROOT/helper/src/frame_probe.c" \
 NOTICE="$BUILD_ROOT/apex/assets/NOTICE.html.gz"
 test -f "$NOTICE"
 python3 "$SOURCE_ROOT/scripts/build_helper_runtime.py" \
+    --version "$HELPER_VERSION" \
     --frame-probe "$BUILD_ROOT/bin/frame_probe" \
     --snapshot-capture "$BUILD_ROOT/bin/snapshot_capture" \
     --stream-capture "$BUILD_ROOT/bin/stream_capture" \
     --library-probe "$BUILD_ROOT/bin/probe_libraries" \
     --runtime-root "$BUILD_ROOT/runtime" \
     --aosp-notice "$NOTICE" \
-    --output "$OUTPUT_ROOT/owlet-cam-helper-aarch64-m6.tar.gz"
+    --output "$OUTPUT_ROOT/owlet-cam-helper-aarch64.tar.gz"
 
-sha256sum "$OUTPUT_ROOT/owlet-cam-helper-aarch64-m6.tar.gz" \
-    > "$OUTPUT_ROOT/owlet-cam-helper-aarch64-m6.tar.gz.sha256"
+python3 "$SOURCE_ROOT/scripts/build_helper_runtime.py" \
+    --version "$HELPER_VERSION" \
+    --frame-probe "$BUILD_ROOT/bin/frame_probe" \
+    --snapshot-capture "$BUILD_ROOT/bin/snapshot_capture" \
+    --stream-capture "$BUILD_ROOT/bin/stream_capture" \
+    --library-probe "$BUILD_ROOT/bin/probe_libraries" \
+    --runtime-root "$BUILD_ROOT/runtime" \
+    --aosp-notice "$NOTICE" \
+    --output "$OUTPUT_ROOT/.owlet-cam-helper-aarch64.repro.tar.gz"
+cmp "$OUTPUT_ROOT/owlet-cam-helper-aarch64.tar.gz" \
+    "$OUTPUT_ROOT/.owlet-cam-helper-aarch64.repro.tar.gz"
+rm "$OUTPUT_ROOT/.owlet-cam-helper-aarch64.repro.tar.gz"
+
+sha256sum "$OUTPUT_ROOT/owlet-cam-helper-aarch64.tar.gz" \
+    > "$OUTPUT_ROOT/owlet-cam-helper-aarch64.tar.gz.sha256"

@@ -2,6 +2,28 @@
 
 All notable changes are documented here. Versions follow semantic versioning.
 
+## [0.7.0] - Unreleased
+
+### Added
+
+- Native external-bridge camera, metric room sensors, health entities,
+  multi-camera selection, reauthentication, reconfiguration, and grouped
+  options against the observed `btoth525/Owlet-To-Rtsp` HTTP API.
+- Checksum-pinned, exact-version AArch64 helper release downloads with bounded
+  disk streaming, atomic installation, cleanup, and actionable Repairs.
+- Reproducible helper release builds, archive inspection, checksums, SPDX SBOM,
+  licence manifest, changelog-derived notes, and Home Assistant beta CI.
+- The administrator upload/runtime panel and the previously validated embedded
+  snapshot and live H.264 paths from Milestones 3 through 7.
+
+### Security
+
+- External bridge credential fields returned by the bridge are ignored and are
+  never represented by the adapter's typed models.
+- Release inspection rejects Owlet/ThroughTek libraries, application packages,
+  unapproved shared libraries, traversal paths, special members, and common
+  serialized secret patterns.
+
 ## Development-only local video feasibility work
 
 - Added safe nested APK/APKM/XAPK extraction, SDK-key presence detection, and a

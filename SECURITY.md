@@ -4,21 +4,28 @@ This independent project is not affiliated with Owlet or ThroughTek.
 
 ## Security architecture
 
-- Proprietary Owlet/ThroughTek libraries will never load into the Home
-  Assistant Core Python process. Embedded protocol work will run in a separately
+- Proprietary Owlet/ThroughTek libraries never load into the Home Assistant
+  Core Python process. Embedded protocol work runs in a separately
   supervised child process with loopback-only control and media endpoints.
-- The project will not ship Owlet applications, ThroughTek libraries, Owlet SDK
+- The project does not ship Owlet applications, ThroughTek libraries, Owlet SDK
   keys, camera credentials, account credentials, or authentication tokens.
 - Proprietary files are user-supplied and stored beneath
   `custom_components/owlet_cam/userfiles/` with restrictive permissions. The
   authenticated admin panel streams uploads to generated mode-0600 filenames;
   it never uses the submitted filename as a path. Extracted libraries are mode
   0500 and the SDK key is retained mode 0600 for archive-free restart recovery.
-- Account credentials belong in Home Assistant config-entry storage. Firebase
-  and KMS tokens should remain in memory. Secrets will not be passed as command
+- Account and external-bridge credentials belong in Home Assistant config-entry
+  storage. Firebase and KMS tokens remain in memory. Secrets are not passed as command
   arguments or environment variables to helper processes.
-- Downloaded open-source helper assets will be version-pinned and SHA-256
-  verified before atomic installation.
+- Open-source helper assets are fetched only from this repository's exact
+  `v<integration-version>` GitHub release. The architecture-specific filename
+  and checksum entry must be unique, the download streams to a private bounded
+  temporary file, SHA-256 plus runtime version/architecture and every internal
+  file checksum are verified, and only then is installation replaced atomically.
+- The current external bridge's camera-list response contains UID/AuthKey and
+  password fields. The integration's parser deliberately ignores them; typed
+  bridge models, entities and diagnostics contain no such fields. Optional
+  explicit RTSP URLs are redacted because users may put credentials in them.
 - Helper processes run in their own process group, are synchronously reaped on
   stop, and request Linux parent-death termination before reading secrets.
   Diagnostics expose only aggregate lifecycle facts and fixed safe error codes;

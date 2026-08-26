@@ -23,6 +23,7 @@ _REPAIR_CODES: Final = frozenset(
         "invalid_runtime_manifest",
         "invalid_runtime_storage",
         "runtime_checksum_mismatch",
+        "runtime_download_failed",
         "missing_runtime",
         "obsolete_helper_runtime",
         "runtime_state_write_failed",

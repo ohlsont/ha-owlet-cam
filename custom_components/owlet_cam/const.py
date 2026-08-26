@@ -7,8 +7,8 @@ from homeassistant.const import CONF_PASSWORD as HA_CONF_PASSWORD
 from homeassistant.const import Platform
 
 DOMAIN: Final = "owlet_cam"
-INTEGRATION_VERSION: Final = "0.2.0"
-EXPECTED_HELPER_VERSION: Final = "0.6.0-dev"
+INTEGRATION_VERSION: Final = "0.7.0"
+EXPECTED_HELPER_VERSION: Final = INTEGRATION_VERSION
 PLATFORMS: Final = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
@@ -22,6 +22,13 @@ CONF_PASSWORD: Final = HA_CONF_PASSWORD
 CONF_REGION: Final = "region"
 CONF_CAMERA_DSN: Final = "camera_dsn"
 CONF_CAMERA_NAME: Final = "camera_name"
+CONF_BRIDGE_URL: Final = "bridge_url"
+CONF_BRIDGE_USERNAME: Final = "bridge_username"
+CONF_BRIDGE_PASSWORD: Final = "bridge_password"  # noqa: S105
+CONF_BRIDGE_CAMERA_ID: Final = "bridge_camera_id"
+CONF_RTSP_OVERRIDE: Final = "explicit_rtsp_source"
+CONF_VERIFY_TLS: Final = "verify_tls"
+CONF_BRIDGE_TIMEOUT: Final = "bridge_request_timeout"
 
 MODE_EXTERNAL: Final = "external_bridge"
 MODE_EMBEDDED: Final = "embedded"
@@ -58,6 +65,8 @@ DEFAULT_PREFER_DIRECT_P2P: Final = False
 DEFAULT_EXPERIMENTAL_LOCAL_SENSORS: Final = False
 DEFAULT_RETAIN_APPLICATION: Final = False
 DEFAULT_COORDINATOR_INTERVAL: Final = timedelta(seconds=DEFAULT_UPDATE_INTERVAL)
+DEFAULT_VERIFY_TLS: Final = True
+DEFAULT_BRIDGE_TIMEOUT: Final = 10
 
 PANEL_URL_PATH: Final = "owlet-cam-runtime"
 STATIC_URL_PATH: Final = "/owlet_cam_static"
@@ -76,6 +85,7 @@ REDACT_KEYS: Final = {
     "password",
     "refresh_token",
     "sdk_key",
+    "explicit_rtsp_source",
     "stream_path_token",
     "token",
     "uid",

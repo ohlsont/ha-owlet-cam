@@ -10,12 +10,24 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.owlet_cam.api.exceptions import (
     OwletAuthenticationError,
+    OwletBridgeAuthenticationError,
+    OwletBridgeCompatibilityError,
+    OwletBridgeConnectionError,
     OwletCameraNotFoundError,
     OwletConnectionError,
     OwletRateLimitError,
 )
-from custom_components.owlet_cam.api.models import OwletCloudMetadata
+from custom_components.owlet_cam.api.models import (
+    BridgeCamera,
+    BridgeInfo,
+    OwletCloudMetadata,
+)
 from custom_components.owlet_cam.const import (
+    CONF_BRIDGE_CAMERA_ID,
+    CONF_BRIDGE_PASSWORD,
+    CONF_BRIDGE_TIMEOUT,
+    CONF_BRIDGE_URL,
+    CONF_BRIDGE_USERNAME,
     CONF_CAMERA_DSN,
     CONF_CAMERA_NAME,
     CONF_DEBUG_LOGGING,
@@ -31,9 +43,11 @@ from custom_components.owlet_cam.const import (
     CONF_RECONNECT_BACKOFF,
     CONF_REGION,
     CONF_RETAIN_APPLICATION,
+    CONF_RTSP_OVERRIDE,
     CONF_RUNTIME_CHANNEL,
     CONF_STREAM_QUALITY,
     CONF_UPDATE_INTERVAL,
+    CONF_VERIFY_TLS,
     DEV_MODE_ENV,
     DOMAIN,
     MODE_DEVELOPMENT,
@@ -43,6 +57,7 @@ from custom_components.owlet_cam.const import (
 )
 
 DSN = "OCD123456789"
+BRIDGE_URL = "https://bridge.example.invalid:8088"
 
 
 def _input(**updates: object) -> dict[str, object]:
@@ -77,6 +92,20 @@ def _entry() -> MockConfigEntry:
     )
 
 
+def _external_entry() -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="Nursery",
+        data={
+            CONF_MODE: MODE_EXTERNAL,
+            **_external_input(),
+            CONF_BRIDGE_CAMERA_ID: "nursery",
+            CONF_CAMERA_NAME: "Nursery",
+        },
+        unique_id="bridge-fixture",
+    )
+
+
 async def test_ordinary_flow_hides_development_mode(hass: HomeAssistant) -> None:
     """The ordinary selector exposes only external and embedded modes."""
     with patch.dict("os.environ", {}, clear=True):
@@ -92,14 +121,173 @@ async def test_ordinary_flow_hides_development_mode(hass: HomeAssistant) -> None
     assert mode_validator(MODE_EMBEDDED) == MODE_EMBEDDED
 
 
-async def test_external_mode_is_deferred(hass: HomeAssistant) -> None:
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN,
-        context={"source": config_entries.SOURCE_USER},
-        data={CONF_MODE: MODE_EXTERNAL},
+def _bridge_camera(name: str = "nursery") -> BridgeCamera:
+    return BridgeCamera(
+        camera_id=name,
+        name=name.title(),
+        online=True,
+        stream_healthy=True,
+        stream_codec="H.264",
+        received_bytes=123,
+        rtsp_url=f"rtsp://bridge.example.invalid:18554/{name}",
     )
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "external_not_available"
+
+
+def _external_input() -> dict[str, object]:
+    return {
+        CONF_BRIDGE_URL: BRIDGE_URL,
+        CONF_BRIDGE_USERNAME: "api-user",
+        CONF_BRIDGE_PASSWORD: "fixture-bridge-password",
+        CONF_RTSP_OVERRIDE: "",
+        CONF_VERIFY_TLS: True,
+    }
+
+
+async def test_external_mode_validates_and_creates(hass: HomeAssistant) -> None:
+    with patch(
+        "custom_components.owlet_cam.config_flow.OwletHttpBridgeClient"
+    ) as client_class:
+        client_class.return_value.async_validate = AsyncMock(
+            return_value=BridgeInfo(
+                api_family="btoth525/owlet-to-rtsp",
+                api_version=None,
+                supports_snapshots=True,
+                supports_sensors=True,
+            )
+        )
+        client_class.return_value.async_get_cameras = AsyncMock(
+            return_value=[_bridge_camera()]
+        )
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_USER},
+            data={CONF_MODE: MODE_EXTERNAL},
+        )
+        assert result["step_id"] == "external"
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], _external_input()
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Nursery"
+    assert result["data"][CONF_MODE] == MODE_EXTERNAL
+    assert result["data"][CONF_BRIDGE_CAMERA_ID] == "nursery"
+    assert result["data"][CONF_BRIDGE_URL] == BRIDGE_URL
+
+
+async def test_external_mode_selects_one_of_multiple_cameras(
+    hass: HomeAssistant,
+) -> None:
+    with patch(
+        "custom_components.owlet_cam.config_flow.OwletHttpBridgeClient"
+    ) as client_class:
+        client_class.return_value.async_validate = AsyncMock()
+        client_class.return_value.async_get_cameras = AsyncMock(
+            return_value=[_bridge_camera(), _bridge_camera("playroom")]
+        )
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": config_entries.SOURCE_USER},
+            data={CONF_MODE: MODE_EXTERNAL},
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], _external_input()
+        )
+        assert result["step_id"] == "external_camera"
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_BRIDGE_CAMERA_ID: "playroom"}
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Playroom"
+    assert result["data"][CONF_BRIDGE_CAMERA_ID] == "playroom"
+
+
+async def test_external_flow_recovers_from_safe_errors(hass: HomeAssistant) -> None:
+    errors = [
+        (OwletBridgeAuthenticationError("safe"), "invalid_bridge_auth"),
+        (OwletBridgeCompatibilityError("safe"), "unsupported_bridge"),
+        (OwletBridgeConnectionError("safe"), "cannot_connect_bridge"),
+    ]
+    for exception, expected_error in errors:
+        with patch(
+            "custom_components.owlet_cam.config_flow.OwletHttpBridgeClient"
+        ) as client_class:
+            client_class.return_value.async_validate = AsyncMock(
+                side_effect=[exception, None]
+            )
+            client_class.return_value.async_get_cameras = AsyncMock(
+                return_value=[_bridge_camera()]
+            )
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN,
+                context={"source": config_entries.SOURCE_USER},
+                data={CONF_MODE: MODE_EXTERNAL},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _external_input()
+            )
+            assert result["errors"] == {"base": expected_error}
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _external_input()
+            )
+            assert result["type"] is FlowResultType.CREATE_ENTRY
+        await hass.config_entries.async_remove(result["result"].entry_id)
+
+
+async def test_external_reauth_and_reconfigure_reload_once_each(
+    hass: HomeAssistant,
+) -> None:
+    entry = _external_entry()
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.owlet_cam.config_flow.OwletHttpBridgeClient"
+        ) as client_class,
+        patch.object(hass.config_entries, "async_schedule_reload") as reload_entry,
+    ):
+        client_class.return_value.async_validate = AsyncMock()
+        client_class.return_value.async_get_cameras = AsyncMock(
+            return_value=[_bridge_camera()]
+        )
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={
+                "source": config_entries.SOURCE_REAUTH,
+                "entry_id": entry.entry_id,
+            },
+            data=dict(entry.data),
+        )
+        assert result["step_id"] == "reauth_bridge"
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                CONF_BRIDGE_USERNAME: "new-user",
+                CONF_BRIDGE_PASSWORD: "replacement-secret",
+            },
+        )
+        assert result["reason"] == "reauth_successful"
+        assert entry.data[CONF_BRIDGE_USERNAME] == "new-user"
+        assert entry.data[CONF_BRIDGE_PASSWORD] == "replacement-secret"
+        reload_entry.assert_called_once_with(entry.entry_id)
+
+        reload_entry.reset_mock()
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={
+                "source": config_entries.SOURCE_RECONFIGURE,
+                "entry_id": entry.entry_id,
+            },
+        )
+        assert result["step_id"] == "reconfigure_bridge"
+        updated = {**_external_input(), CONF_BRIDGE_URL: f"{BRIDGE_URL}/new"}
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], updated
+        )
+
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_BRIDGE_URL] == f"{BRIDGE_URL}/new"
+    reload_entry.assert_called_once_with(entry.entry_id)
 
 
 async def test_development_flow_create_and_reject_duplicate(
@@ -356,3 +544,44 @@ async def test_options_are_grouped_and_reload_exactly_once(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options == {**general, **embedded}
     schedule_reload.assert_called_once_with(entry.entry_id)
+
+
+async def test_external_options_reload_exactly_once(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Nursery",
+        data={
+            CONF_MODE: MODE_EXTERNAL,
+            CONF_BRIDGE_URL: BRIDGE_URL,
+            CONF_BRIDGE_CAMERA_ID: "nursery",
+            CONF_CAMERA_NAME: "Nursery",
+            CONF_VERIFY_TLS: True,
+        },
+        unique_id="bridge-fixture",
+    )
+    entry.add_to_hass(hass)
+    general = {
+        CONF_UPDATE_INTERVAL: 60,
+        CONF_KEEP_WARM: False,
+        CONF_IDLE_TIMEOUT: 60,
+        CONF_STREAM_QUALITY: "high",
+        CONF_ENABLE_AUDIO: False,
+        CONF_DEBUG_LOGGING: False,
+    }
+    external = {
+        CONF_BRIDGE_TIMEOUT: 15,
+        CONF_RTSP_OVERRIDE: "rtsp://bridge.example.invalid:18554/nursery",
+    }
+    with patch.object(hass.config_entries, "async_schedule_reload") as reload_entry:
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], general
+        )
+        assert result["step_id"] == "external"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], external
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == {**general, **external}
+    reload_entry.assert_called_once_with(entry.entry_id)

@@ -12,13 +12,21 @@ from homeassistant.components.ffmpeg import DATA_FFMPEG
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.owlet_cam.camera import OwletCamEmbeddedCamera
+from custom_components.owlet_cam.api.bridge import OwletBridgeClient
+from custom_components.owlet_cam.api.exceptions import OwletBridgeConnectionError
+from custom_components.owlet_cam.api.models import OwletCameraData
+from custom_components.owlet_cam.camera import (
+    OwletCamEmbeddedCamera,
+    OwletCamExternalCamera,
+)
 from custom_components.owlet_cam.const import (
+    CONF_BRIDGE_CAMERA_ID,
     CONF_CAMERA_DSN,
     CONF_CAMERA_NAME,
     CONF_MODE,
     DOMAIN,
     MODE_EMBEDDED,
+    MODE_EXTERNAL,
 )
 from custom_components.owlet_cam.runtime.manager import (
     OwletRuntimeError,
@@ -27,6 +35,69 @@ from custom_components.owlet_cam.runtime.manager import (
 
 DSN = "OCD123456789"
 JPEG = b"\xff\xd8fixture-jpeg\xff\xd9"
+
+
+def _external_camera(
+    hass: HomeAssistant,
+) -> tuple[OwletCamExternalCamera, AsyncMock, MagicMock]:
+    client = AsyncMock(spec=OwletBridgeClient)
+    coordinator = MagicMock()
+    coordinator.data = {
+        "bridge_online": True,
+        "camera_online": True,
+        "stream_healthy": True,
+    }
+    coordinator.last_update_success = True
+    coordinator.async_add_listener.return_value = lambda: None
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Nursery",
+        data={
+            CONF_MODE: MODE_EXTERNAL,
+            CONF_BRIDGE_CAMERA_ID: "nursery",
+            CONF_CAMERA_NAME: "Nursery",
+        },
+        unique_id="bridge-fixture",
+    )
+    entry.runtime_data = SimpleNamespace(
+        client=client,
+        coordinator=coordinator,
+        cameras={"nursery": OwletCameraData(camera_id="nursery", name="Nursery")},
+    )
+    entity = OwletCamExternalCamera(entry)
+    entity.hass = hass
+    return entity, client, coordinator
+
+
+async def test_external_camera_uses_bridge_stream_and_optional_snapshot(
+    hass: HomeAssistant,
+) -> None:
+    camera, client, coordinator = _external_camera(hass)
+    client.async_get_stream_source.return_value = (
+        "rtsp://bridge.example.invalid:18554/nursery"
+    )
+    client.async_get_snapshot.return_value = JPEG
+
+    assert camera.supported_features == CameraEntityFeature.STREAM
+    assert camera.available
+    assert camera.is_streaming
+    assert camera.use_stream_for_stills
+    assert await camera.stream_source() == "rtsp://bridge.example.invalid:18554/nursery"
+    assert await camera.async_camera_image() == JPEG
+
+    coordinator.data["camera_online"] = False
+    assert not camera.available
+
+
+async def test_external_camera_contains_bridge_failures(
+    hass: HomeAssistant,
+) -> None:
+    camera, client, _coordinator = _external_camera(hass)
+    client.async_get_stream_source.side_effect = OwletBridgeConnectionError("safe")
+    client.async_get_snapshot.side_effect = OwletBridgeConnectionError("safe")
+
+    assert await camera.stream_source() is None
+    assert await camera.async_camera_image() is None
 
 
 def _camera(

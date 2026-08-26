@@ -8,19 +8,28 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfDataRate
+from homeassistant.const import (
+    LIGHT_LUX,
+    PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    UnitOfDataRate,
+    UnitOfSoundPressure,
+    UnitOfTemperature,
+)
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_BRIDGE_CAMERA_ID,
     CONF_CAMERA_DSN,
     CONF_CAMERA_NAME,
     CONF_MODE,
     MODE_EMBEDDED,
+    MODE_EXTERNAL,
     STATUS_READY,
 )
 from .data import OwletCamConfigEntry
-from .entity import OwletCamCloudEntity, OwletCamRuntimeEntity
+from .entity import OwletCamBridgeEntity, OwletCamCloudEntity, OwletCamRuntimeEntity
 
 STATUS_DESCRIPTION = SensorEntityDescription(
     key="integration_status",
@@ -93,6 +102,58 @@ _RUNTIME_DESCRIPTIONS = (
     ),
 )
 
+_BRIDGE_DESCRIPTIONS = (
+    SensorEntityDescription(
+        key="temperature",
+        translation_key="temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key="humidity",
+        translation_key="humidity",
+        device_class=SensorDeviceClass.HUMIDITY,
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key="sound_level",
+        translation_key="sound_level",
+        device_class=SensorDeviceClass.SOUND_PRESSURE,
+        native_unit_of_measurement=UnitOfSoundPressure.DECIBEL,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key="illuminance",
+        translation_key="illuminance",
+        device_class=SensorDeviceClass.ILLUMINANCE,
+        native_unit_of_measurement=LIGHT_LUX,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key="wifi_signal",
+        translation_key="wifi_signal",
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="stream_fps",
+        translation_key="stream_fps",
+        native_unit_of_measurement="fps",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="reconnect_count",
+        translation_key="reconnect_count",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+)
+
 
 async def async_setup_entry(
     _hass: object,
@@ -114,6 +175,12 @@ async def async_setup_entry(
                 for description in _RUNTIME_DESCRIPTIONS
             )
         async_add_entities(entities)
+        return
+    if entry.data.get(CONF_MODE) == MODE_EXTERNAL:
+        async_add_entities(
+            OwletCamBridgeSensor(entry, description=description)
+            for description in _BRIDGE_DESCRIPTIONS
+        )
         return
     async_add_entities([OwletCamIntegrationStatusSensor(entry)])
 
@@ -169,6 +236,38 @@ class OwletCamAuthenticationExpirySensor(OwletCamCloudEntity, SensorEntity):
         """Return the coordinator-cached token expiry."""
         value = self.coordinator.data.get("authentication_expiry")
         return value if isinstance(value, datetime) else None
+
+
+class OwletCamBridgeSensor(OwletCamBridgeEntity, SensorEntity):
+    """Expose one value from the coordinated external bridge cycle."""
+
+    entity_description: SensorEntityDescription
+
+    def __init__(
+        self,
+        entry: OwletCamConfigEntry,
+        *,
+        description: SensorEntityDescription,
+    ) -> None:
+        self.entity_description = description
+        camera_id = entry.data[CONF_BRIDGE_CAMERA_ID]
+        camera = entry.runtime_data.cameras[camera_id]
+        super().__init__(
+            entry.runtime_data.coordinator,
+            camera_id=camera_id,
+            camera_name=camera.name,
+            key=description.key,
+        )
+
+    @property
+    def native_value(self) -> float | int | None:
+        """Return only the coordinator-cached bridge value."""
+        value = self.coordinator.data.get(self.entity_description.key)
+        return (
+            value
+            if isinstance(value, int | float) and not isinstance(value, bool)
+            else None
+        )
 
 
 class OwletCamRuntimeSensor(OwletCamRuntimeEntity, SensorEntity):

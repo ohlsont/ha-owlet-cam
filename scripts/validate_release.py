@@ -26,6 +26,11 @@ def main() -> int:
     manifest = json.loads((INTEGRATION / "manifest.json").read_text())
     hacs = json.loads((ROOT / "hacs.json").read_text())
     pyproject = (ROOT / "pyproject.toml").read_text()
+    constants = (INTEGRATION / "const.py").read_text()
+    integration_init = (INTEGRATION / "__init__.py").read_text()
+    changelog = (ROOT / "CHANGELOG.md").read_text()
+    strings = json.loads((INTEGRATION / "strings.json").read_text())
+    english = json.loads((INTEGRATION / "translations" / "en.json").read_text())
 
     required = {
         "domain",
@@ -46,6 +51,14 @@ def main() -> int:
         raise SystemExit("manifest domain must be owlet_cam")
     if f'version = "{manifest["version"]}"' not in pyproject:
         raise SystemExit("manifest and pyproject versions differ")
+    if f'INTEGRATION_VERSION: Final = "{manifest["version"]}"' not in constants:
+        raise SystemExit("manifest and integration diagnostic versions differ")
+    if f"owlet-cam-panel.js?v={manifest['version']}" not in integration_init:
+        raise SystemExit("frontend cache version does not match the manifest")
+    if f"## [{manifest['version']}]" not in changelog:
+        raise SystemExit("CHANGELOG.md has no section for the manifest version")
+    if strings != english:
+        raise SystemExit("English translations differ from strings.json")
     if hacs != {
         "name": "Owlet Cam",
         "homeassistant": "2024.11.0",

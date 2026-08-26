@@ -6,7 +6,7 @@ with, endorsed by, or supported by Owlet or ThroughTek.
 
 ## Current status: Milestone 7 accepted on Yellow
 
-Version `0.2.0` implements clean-room, asynchronous Owlet cloud authentication
+Version `0.7.0` implements clean-room, asynchronous Owlet cloud authentication
 and camera KMS validation. Embedded Experimental setup can validate a European
 or World/US account. The production cloud client follows authorized Firestore
 account → service → device references when a Cam 1's app-visible serial differs
@@ -33,17 +33,23 @@ The credential-availability entity is boolean only. Firebase tokens, camera UID,
 AuthKey, AV password, and account identifiers are not exposed in entity state,
 attributes, diagnostics, logs, or frontend errors.
 
-External bridge mode is visible as the planned production fallback but is
-explicitly unavailable until Milestone 2. A redacted real-account probe has
-authenticated successfully against the user-confirmed EMEA project. Direct
+External bridge mode now connects to the current `btoth525/Owlet-To-Rtsp` HTTP
+API, discovers one or several cameras, and creates a native Home Assistant
+camera plus metric temperature, humidity, sound, illuminance, Wi-Fi and health
+entities. Snapshot and room-sensor endpoints are optional; their absence does
+not break RTSP video. This path has comprehensive fake-bridge coverage but has
+not yet been exercised against a real external bridge.
+
+A redacted real-account probe has authenticated successfully against the
+user-confirmed EMEA project. Direct
 authorized Firestore account → service → device references resolved one
 internal camera DSN; that value differs from the identifier Dream displays to
 the user. Regional KMS validation using the internal DSN succeeded and emitted
 only credential-presence booleans. No account, device, token, DSN, UID, AuthKey,
 AV password, or SDK key value was retained or displayed. This discovery path is
 now used by the Home Assistant client and config flow.
-The user has deferred publishing the GitHub/HACS repository until core
-functionality is further along. A private manual Yellow installation now proves
+The source is held in a private GitHub repository while release hardening is in
+progress. A private manual Yellow installation now proves
 that the entry loads, EMEA cloud/KMS validation succeeds, entities appear, and
 diagnostics redact configured secrets. This is not HACS-installation evidence.
 
@@ -95,11 +101,13 @@ Direct process enumeration inside the Core PID namespace remains unperformed:
 the supported SSH add-on cannot see that namespace, and no host-PID, Docker or
 privileged workaround was enabled.
 
-A deterministic package script now creates a checksum-manifested ARM64 runtime
+A deterministic release workflow now creates a checksum-manifested ARM64 runtime
 containing only four clean-room helpers, a minimal pinned AOSP Bionic runtime,
-and licence notices. The current local archive was scanned against configured
-secrets and common token patterns; no user application or proprietary library
-is included. It remains a local test artefact until release hosting is enabled.
+and licence notices. Release assets are inspected against configured secrets,
+common token patterns and proprietary filenames; no user application or
+proprietary library may be included. The integration can download only the
+exact helper version matching its own release and verifies the published
+SHA-256 before atomic installation. Release hosting remains unperformed.
 
 Milestone 6 now has a bounded real-media result on Yellow. One isolated helper
 owns the TUTK session and emits length-framed Annex-B H.264. The integration
@@ -171,10 +179,11 @@ user-selected XAPK, cleared the Repair, deleted the uploaded archive after
 extraction, and restored `ready` with all five libraries compatible. Milestone 7
 is accepted on Yellow.
 
-## Planned runtime modes
+## Runtime modes
 
-- **External bridge** will be the first production-capable camera mode. It will
-  connect to an independently running, known-compatible Owlet-to-RTSP bridge.
+- **External bridge** connects to an independently running, compatible
+  `btoth525/Owlet-To-Rtsp` bridge and exposes its RTSP camera and room sensors
+  without MQTT or a separately configured Generic Camera entity.
 - **Embedded experimental** will use a separately supervised native helper. It
   will never load proprietary native libraries into Home Assistant's Python
   process, and users will supply their own application package.
@@ -196,12 +205,14 @@ checks have passed on that target. HACS installation remains unperformed.
 
 ## Install as a HACS custom repository
 
-1. After this repository is published, in HACS open the custom repositories
-   dialog.
+1. After this repository is public and has a release, in HACS open the custom
+   repositories dialog. HACS cannot install this intentionally private
+   development repository.
 2. Add `https://github.com/ohlsont/ha-owlet-cam` with category **Integration**.
 3. Download **Owlet Cam** and restart Home Assistant.
-4. Add **Owlet Cam** from Settings → Devices & services, choose **Embedded
-   experimental**, and enter the Owlet account, region, camera serial, and camera
+4. Add **Owlet Cam** from Settings → Devices & services. Choose **External
+   bridge** and enter its HTTP(S) control-panel URL, or choose **Embedded
+   experimental** and enter the Owlet account, region, camera serial, and camera
    name. The serial shown in Dream is accepted even when Owlet uses a different
    internal KMS identifier.
 
@@ -210,8 +221,9 @@ is available only when Core starts with `OWLET_CAM_DEV_MODE=1`.
 
 ## Configuration and screenshots
 
-Configuration, reauthentication, reconfiguration, and grouped general/embedded
-options are implemented in the UI. Defaults favor stability and coexistence:
+Configuration, reauthentication, reconfiguration, and grouped general,
+external and embedded options are implemented in the UI. Defaults favor
+stability and coexistence:
 keep-warm, audio, direct-P2P preference, and experimental local sensors are all
 off. Retaining the uploaded application is also off by default. Administrators
 manage user-supplied application files and native probes from the **Owlet Cam
@@ -229,6 +241,11 @@ material. See [SECURITY.md](SECURITY.md).
 
 ## Known limitations
 
+- External bridge mode is implemented and covered with hand-authored responses
+  matching commit `132620a85ff422b451e52fdbf2076abb3975e9ec`, but its real
+  bridge/video gate is unperformed. The inspected bridge has no versioned API
+  field and exposes sensitive camera fields in `/api/cameras`; this integration
+  deliberately ignores those fields and parses only safe status metadata.
 - The embedded camera's snapshot path and bounded continuous Home Assistant
   stream path have displayed real media on Yellow. The loopback source is
   timestamped MPEG-TS carrying copied H.264, not RTSP. Milestone 6 is accepted
@@ -239,7 +256,8 @@ material. See [SECURITY.md](SECURITY.md).
 - Cloud/KMS behavior has comprehensive sanitized fixture coverage and succeeded
   inside Home Assistant Core on Yellow. Wrong-password reauthentication and the
   complete Milestone 1 acceptance sequence remain unperformed.
-- Manual Yellow installation is proven; HACS installation is not. The initial
+- Manual Yellow installation is proven; HACS installation and helper release
+  download are not. The initial
   native probe hit code-137 memory pressure. A corrected press caused no new
   exit but was invalidated by a still-completing config-entry reload. A later
   reload-settled probe passed all five library loads on Yellow.

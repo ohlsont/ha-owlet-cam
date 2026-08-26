@@ -33,8 +33,10 @@ writes media only to an inherited descriptor supplied by the supervising Core
 process; stdout remains fixed-schema, non-secret JSON.
 `scripts/build_helper_runtime.py` packages them with only the pinned minimal
 AOSP Bionic files and licence notices, emits a per-file checksum manifest, and
-produces deterministic output. The resulting archive remains a local test
-artefact until Yellow validation and release hosting are complete.
+produces deterministic output. GitHub's helper/release workflows package the
+same build twice and require byte equality, inspect every member, and publish
+checksums, an SPDX SBOM and a licence manifest. Actual release-hosted download
+and installation evidence remains unperformed.
 
 Home Assistant account credentials remain in config-entry data. Short-lived
 camera credentials and the user-extracted SDK key are sent to the isolated
