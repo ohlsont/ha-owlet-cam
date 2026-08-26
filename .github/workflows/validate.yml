@@ -10,25 +10,36 @@ permissions:
 
 jobs:
   hacs:
+    if: github.event.repository.private == false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: hacs/action@main
         with:
           category: integration
           repository: ${{ github.repository }}
 
+  hacs-private-readiness:
+    if: github.event.repository.private
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Record public-only HACS gate
+        run: >-
+          echo 'HACS Action is intentionally deferred while this repository is
+          private; it remains configured as a required public-repository gate.'
+
   hassfest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: home-assistant/actions/hassfest@master
 
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: "3.14"
           enable-cache: true
