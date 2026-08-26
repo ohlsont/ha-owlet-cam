@@ -34,6 +34,21 @@ All notable changes are documented here. Versions follow semantic versioning.
   private SDK-key member and one integrity manifest; unexpected members,
   duplicate paths, unsupported package IDs and hash/size mismatches are rejected.
 
+### Validation status
+
+- Deployed commit `e75ab86` to Home Assistant Yellow on Core 2026.8.3 / HAOS
+  18.2. The configuration check and restart succeeded, the entry loaded, and
+  the former runtime sidebar panel was absent from the live panel registry.
+- Installed the exact inspected AArch64 helper artifact from successful CI run
+  `32956581716` using its independently matched SHA-256 and an atomic fixed-
+  allowlist swap. Runtime revalidation returned `ready` with helper 0.7.0, five
+  compatible libraries, all child processes reaped, no active Repairs and no
+  current structured Owlet system-log entries.
+- Removed deployment staging, rollback and obsolete helper backups after the
+  gate passed, retained the active runtime and user-supplied proprietary files,
+  and fully closed the temporary key-only SSH port. This is private manual-
+  deployment evidence, not HACS installation or stable-release evidence.
+
 ## Development-only local video feasibility work
 
 - Added safe nested APK/APKM/XAPK extraction, SDK-key presence detection, and a

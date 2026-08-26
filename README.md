@@ -4,7 +4,7 @@ Owlet Cam is a clean-room Home Assistant custom integration intended to expose
 Owlet cameras as native camera and room-sensor entities. It is not affiliated
 with, endorsed by, or supported by Owlet or ThroughTek.
 
-## Current status: Milestone 7 accepted on Yellow
+## Current status: Milestone 7 accepted; 0.7.0 hardening deployed on Yellow
 
 Version `0.7.0` implements clean-room, asynchronous Owlet cloud authentication
 and camera KMS validation. Embedded Experimental setup can validate a European
@@ -52,6 +52,13 @@ The source is held in a private GitHub repository while release hardening is in
 progress. A private manual Yellow installation now proves
 that the entry loads, EMEA cloud/KMS validation succeeds, entities appear, and
 diagnostics redact configured secrets. This is not HACS-installation evidence.
+The current 0.7.0 hardening build has also been deployed on Core 2026.8.3 / HAOS
+18.2: the native Home Assistant setup path loads without the former sidebar
+panel, and the exact CI-built AArch64 helper revalidates to `ready` with all five
+user-supplied libraries compatible and all probe children reaped. Because the
+repository is still private, that helper was installed manually from the
+authenticated CI artifact; anonymous release download and HACS installation
+remain unproven.
 
 The first Yellow runtime probe encountered system memory pressure: Supervisor
 recorded Core and Matter processes exiting with code 137 while the original
