@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import stat
@@ -20,9 +21,12 @@ from custom_components.owlet_cam.runtime.apk import (
 )
 from scripts.build_preparer_zipapp import build_zipapp
 from scripts.prepare_runtime_package import (
+    APKPURE_TRUSTED_DREAM_LIBRARY_SETS,
     PreparationError,
     acquire_with_adb,
     acquire_with_apkeep,
+    acquire_with_apkpure,
+    main,
     prepare_runtime_package,
 )
 
@@ -185,3 +189,94 @@ def test_apkeep_rejects_public_token_config(tmp_path: Path) -> None:
             config=config,
             package="com.owletcare.sleep",
         )
+
+
+def test_apkpure_requests_credential_free_arm64_bundle(tmp_path: Path) -> None:
+    captured: list[str] = []
+
+    def fake_run(
+        arguments: list[str], *, failure: str
+    ) -> subprocess.CompletedProcess[bytes]:
+        del failure
+        captured.extend(arguments)
+        output = Path(arguments[-1]) / "dream.xapk"
+        _write_source(output)
+        return subprocess.CompletedProcess(arguments, 0, b"downloaded", b"")
+
+    with patch("scripts.prepare_runtime_package._run_command", side_effect=fake_run):
+        source = acquire_with_apkpure(
+            tmp_path,
+            apkeep="apkeep",
+            package="com.owletcare.sleep",
+        )
+
+    assert source.name == "dream.xapk"
+    assert "apk-pure" in captured
+    assert "arch=arm64-v8a" in captured
+    assert not {"-e", "-t", "--auth-token", "-i"}.intersection(captured)
+
+
+def test_apkpure_rejects_legacy_package(tmp_path: Path) -> None:
+    with pytest.raises(PreparationError, match="only the Owlet Dream"):
+        acquire_with_apkpure(
+            tmp_path,
+            apkeep="apkeep",
+            package="com.owletcare.owletcare",
+        )
+
+
+def test_trusted_library_gate_accepts_matching_set(tmp_path: Path) -> None:
+    source = _write_source(tmp_path / "dream.apk")
+    output = tmp_path / "runtime.owletcam"
+    trusted = frozenset(
+        {
+            frozenset(
+                (name, hashlib.sha256(f"fixture:{name}".encode()).hexdigest())
+                for name in REQUIRED_LIBRARIES
+            )
+        }
+    )
+
+    prepare_runtime_package(source, output, trusted_library_sets=trusted)
+
+    assert output.is_file()
+
+
+def test_apkpure_trusted_library_gate_rejects_unknown_code(tmp_path: Path) -> None:
+    source = _write_source(tmp_path / "dream.apk")
+    output = tmp_path / "runtime.owletcam"
+
+    with pytest.raises(PreparationError, match="unrecognized native libraries"):
+        prepare_runtime_package(
+            source,
+            output,
+            trusted_library_sets=APKPURE_TRUSTED_DREAM_LIBRARY_SETS,
+        )
+
+    assert not output.exists()
+
+
+def test_apkpure_cli_applies_trusted_library_gate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = _write_source(tmp_path / "dream.xapk")
+    output = tmp_path / "runtime.owletcam"
+    report = {"output": str(output), "sdk_key_found": True}
+
+    with (
+        patch.object(sys, "argv", ["owlet-cam-prepare", "apkpure", str(output)]),
+        patch(
+            "scripts.prepare_runtime_package.acquire_with_apkpure",
+            return_value=source,
+        ),
+        patch(
+            "scripts.prepare_runtime_package.prepare_runtime_package",
+            return_value=report,
+        ) as prepare,
+    ):
+        assert main() == 0
+
+    assert json.loads(capsys.readouterr().out) == report
+    assert prepare.call_args.kwargs["trusted_library_sets"] == (
+        APKPURE_TRUSTED_DREAM_LIBRARY_SETS
+    )

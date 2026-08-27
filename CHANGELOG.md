@@ -6,6 +6,9 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ### Added
 
+- A credential-free desktop APKPure preparation path. It requests only the
+  ARM64 Dream bundle through apkeep and produces the same compact private
+  `.owletcam` package without requiring Android, Google, or Owlet credentials.
 - Optional incoming AAC-LC audio for embedded live streams. The isolated native
   helper drains ThroughTek's audio FIFO into a separate inherited pipe, and the
   integration adds 8 kHz mono AAC to the loopback MPEG-TS without transcoding.
@@ -14,6 +17,11 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ### Safety
 
+- APKPure preparation fails closed unless all five executable native-library
+  hashes match the set independently observed in a signed APKPure Dream bundle
+  and an official Google Play Dream installation. Unknown store updates direct
+  the user to ADB or the authenticated Google Play path instead of executing
+  unreviewed native code.
 - Audio is enabled by default after successful real Owlet Cam 1 / Yellow
   validation and can be disabled for video-only operation. Unsupported codecs,
   malformed audio frames and audio-pipe failures are isolated from the H.264

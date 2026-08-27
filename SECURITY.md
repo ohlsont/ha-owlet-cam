@@ -14,9 +14,12 @@ components.
 - The project does not ship Owlet applications, ThroughTek libraries, Owlet SDK
   keys, camera credentials, account credentials, or authentication tokens.
 - The desktop preparer accepts an existing application, exports installed splits
-  with adb, or optionally invokes apkeep. The apkeep path accepts only a private
-  configuration-file path; Google email/auth tokens are never put in preparer
-  command arguments, output, the `.owletcam` package, or Home Assistant.
+  with adb, invokes apkeep against Google Play using a private configuration
+  file, or downloads Dream credential-free from APKPure. APKPure native code is
+  accepted only when all five executable-library hashes match a set independently
+  verified in a signed APKPure bundle and a Google Play installation; changed or
+  unknown native code fails closed. Google email/auth tokens are never put in
+  preparer command arguments, output, the `.owletcam` package, or Home Assistant.
 - The preparer is a dependency-free Python zipapp published as a checksummed
   release asset. Its deterministic source archive is inspected by CI and can be
   reproduced from `scripts/build_preparer_zipapp.py`.

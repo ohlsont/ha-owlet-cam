@@ -22,6 +22,19 @@ optionally expose room sensors from a compatible external bridge.
 Owlet Cam is not affiliated with, endorsed by, or supported by Owlet or
 ThroughTek.
 
+## Quick navigation
+
+- [Capabilities](#what-works)
+- [Requirements and tested support](#requirements-and-support)
+- [Install with HACS](#installation-with-hacs)
+- [External bridge setup](#set-up-external-bridge-mode)
+- [Embedded setup](#set-up-embedded-experimental-mode)
+- [Entities](#home-assistant-entities)
+- [Options](#options-and-stream-behavior)
+- [Privacy and security](#privacy-and-security)
+- [Troubleshooting](#repairs-and-troubleshooting)
+- [Known limitations](#known-limitations)
+
 ## What works
 
 | Capability | External bridge | Embedded experimental |
@@ -34,7 +47,7 @@ ThroughTek.
 | `camera.record` | When the source supports it | Tested on Yellow |
 | Temperature, humidity, sound, light and Wi-Fi sensors | When exposed by the bridge | Not yet supported |
 | Owlet cloud login | Not required | Required |
-| User-supplied Owlet application files | Not required | Required once during setup |
+| Private desktop-prepared `.owletcam` package | Not required | Required once during setup |
 | Architecture | Any Home Assistant architecture supported by the bridge client | AArch64 only |
 | Validation status | Automated fake-bridge coverage; real bridge gate pending | Bounded real Owlet Cam 1 validation on Yellow |
 
@@ -121,12 +134,36 @@ rejects duplicate camera entries.
 ### 1. Prepare a private `.owletcam` package
 
 Download `owlet-cam-prepare.pyz` and its checksum from the same GitHub release
-as the integration. Run it on a desktop computer; do not run APK acquisition
-inside Home Assistant.
+as the integration and verify the checksum. Run it with Python 3.12 or newer on
+a desktop computer; do not run application acquisition inside Home Assistant.
 
-The recommended workflow uses an authorized Android device or a Play-enabled
-Android Studio emulator with Dream already installed. Verify that Dream can
-show live video before continuing, enable ADB, then run:
+#### Recommended: credential-free APKPure download
+
+Install [apkeep](https://github.com/EFForg/apkeep) 1.0.0 or newer from its
+official release, make sure `apkeep` is available on `PATH`, then run:
+
+```bash
+python3 owlet-cam-prepare.pyz apkpure owlet.owletcam
+```
+
+This path requests the ARM64 Dream bundle (`com.owletcare.sleep`) from APKPure.
+It requires no Android device, emulator, Google account, Owlet account, or
+token. APKPure is a third-party distributor and receives the normal network
+metadata associated with the download, including the requesting IP address and
+package name.
+
+The preparer does not trust APKPure's security label by itself. It creates the
+package only when every executable Owlet/ThroughTek library is byte-for-byte
+identical to a library set independently verified in both a signed APKPure
+Dream bundle and a Google Play Dream installation. A new Dream release with
+changed native code fails closed before `.owletcam` is created; use one of the
+official-source alternatives below until the new library set has been reviewed.
+
+#### Alternative: export an official installation with ADB
+
+Use an authorized physical Android device or Play-enabled Android Studio
+emulator with Dream already installed. Verify that Dream can show live video,
+enable ADB, then run:
 
 ```bash
 python3 owlet-cam-prepare.pyz adb owlet.owletcam
@@ -136,6 +173,8 @@ If more than one Android device is connected, add `--serial DEVICE`. The
 default package is the current Dream app (`com.owletcare.sleep`); for the legacy
 Owlet Care app, add `--package com.owletcare.owletcare`.
 
+#### Alternative: use an existing application archive
+
 If you already have a legitimate APK, APKM, XAPK, or ZIP archive, minimize it
 without downloading anything:
 
@@ -143,8 +182,20 @@ without downloading anything:
 python3 owlet-cam-prepare.pyz archive dream.xapk owlet.owletcam
 ```
 
-Advanced users may use [apkeep](https://github.com/efforg/apkeep) with a
-private configuration file:
+#### Alternative: download directly from Google Play with apkeep
+
+Create a private `apkeep.ini` containing a Google Play email and either an AAS
+token or dispenser authentication token—never a Google password:
+
+```ini
+[google]
+email = account@example.com
+aas_token = your-aas-token
+# Or replace aas_token with:
+# auth_token = ya29...
+```
+
+Protect the file and pass only its path to the preparer:
 
 ```bash
 chmod 600 /path/to/apkeep.ini
@@ -155,13 +206,13 @@ python3 owlet-cam-prepare.pyz apkeep owlet.owletcam \
 Only the configuration-file path is passed on the command line. Google
 credentials or tokens must not be passed as arguments. apkeep warns that using
 Google Play may carry account or Terms-of-Service risk, so use a separate
-account if appropriate. APKPure and other third-party APK sources are not
-supported by this project.
+account if appropriate. Delete `apkeep.ini` after creating the package.
 
 The generated `.owletcam` file contains exactly the required ARM64 libraries,
 the SDK licence key extracted from your application, and integrity metadata. It
 contains no Owlet account password, Firebase token, or camera credential. It is
-still private proprietary material: do not publish or share it.
+still private proprietary material: do not publish or share it. The preparer
+does not install or execute anything from the downloaded Android application.
 
 ### 2. Add the integration
 
@@ -290,6 +341,7 @@ versions, and repeated stream recovery failure.
 | Camera serial is rejected | Use the app-visible value beginning with letters `OC`; do not type digit `0` as the first character. |
 | Authentication fails | Verify the same email, typed password, and region in Dream. Apple/Google sign-in alone may not provide a usable Owlet password. |
 | Runtime package is rejected | Regenerate it with the matching release's preparer. Do not rename an APK to `.owletcam`. |
+| APKPure native libraries are not recognized | Dream's native code changed or the download is not the trusted build. Use ADB or the Google Play apkeep path and report the non-secret Dream version. |
 | Missing ARM64 libraries | Use a Play installation containing the `arm64-v8a` split and prepare the package again. |
 | Runtime download fails | Confirm internet access and that a matching public GitHub release contains the AArch64 helper and checksums. |
 | Runtime never becomes ready | Open the associated Repair, enable **Run runtime probe**, and download redacted diagnostics after the bounded probe. |

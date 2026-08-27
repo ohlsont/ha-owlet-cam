@@ -37,12 +37,52 @@ DEFAULT_PACKAGE: Final = "com.owletcare.sleep"
 COMMAND_TIMEOUT: Final = 180.0
 _ZIP_TIMESTAMP: Final = (1980, 1, 1, 0, 0, 0)
 
+# These are the five executable library hashes independently observed in both a
+# validly signed APKPure Dream 3.36.0 bundle and a Google Play Dream 3.40.0
+# installation. The credential-free APKPure path fails closed when a store
+# update changes any native code; users can then use the official-source adb or
+# Google Play paths while a new library set is reviewed. SDK-key material is
+# deliberately absent from this trust record.
+APKPURE_TRUSTED_DREAM_LIBRARY_SETS: Final = frozenset(
+    {
+        frozenset(
+            {
+                (
+                    "libAVAPIs.so",
+                    "9aebb5557966218798b1a43af2f623c48116f73f9bbee65214ca2af264bd022b",
+                ),
+                (
+                    "libIOTCAPIs.so",
+                    "3fbfc08b8fe67c1fb2495af0d0d5871d5e3b2a9207fe104284baaf8416d1bada",
+                ),
+                (
+                    "libP2PTunnelAPIs.so",
+                    "771a424d3ae77dd1c265fcf34a933bfaebb14e2ffe990f4c24ead8e9d1c6e40e",
+                ),
+                (
+                    "libRDTAPIs.so",
+                    "3d0da6449c9417b5f60f13119c6927be6c12ea6591ad7997324ec77e96d7c27f",
+                ),
+                (
+                    "libTUTKGlobalAPIs.so",
+                    "67e9eca19b730cec70178a38b1d5e265a4a00b28127d941696f133af879f4593",
+                ),
+            }
+        )
+    }
+)
+
 
 class PreparationError(ValueError):
     """Raised with a secret-free message when desktop preparation fails."""
 
 
-def prepare_runtime_package(source: Path, output: Path) -> dict[str, object]:
+def prepare_runtime_package(
+    source: Path,
+    output: Path,
+    *,
+    trusted_library_sets: frozenset[frozenset[tuple[str, str]]] | None = None,
+) -> dict[str, object]:
     """Extract an application and write the minimum deterministic runtime pack."""
     if output.suffix.lower() != RUNTIME_PACK_SUFFIX:
         raise PreparationError(f"Output must end with {RUNTIME_PACK_SUFFIX}")
@@ -59,6 +99,14 @@ def prepare_runtime_package(source: Path, output: Path) -> dict[str, object]:
             )
         if application.sdk_key is None:
             raise PreparationError("The supplied application has no Owlet SDK key")
+        library_set = frozenset(
+            (name, library.sha256) for name, library in application.libraries.items()
+        )
+        if trusted_library_sets is not None and library_set not in trusted_library_sets:
+            raise PreparationError(
+                "The APKPure application contains unrecognized native libraries; "
+                "use adb or the Google Play apkeep path"
+            )
         manifest = _runtime_manifest(application)
         _write_runtime_pack(output, application, manifest)
         try:
@@ -164,6 +212,40 @@ def acquire_with_apkeep(
         ],
         failure="apkeep could not download the Owlet application from Google Play",
     )
+    return _collect_apkeep_download(downloaded, destination, label="google-play")
+
+
+def acquire_with_apkpure(
+    destination: Path,
+    *,
+    apkeep: str,
+    package: str,
+) -> Path:
+    """Download one ARM64 Owlet bundle from APKPure without credentials."""
+    if package != DEFAULT_PACKAGE:
+        raise PreparationError("The APKPure path supports only the Owlet Dream app")
+    downloaded = destination / "apkpure-download"
+    downloaded.mkdir(mode=0o700)
+    _run_command(
+        [
+            apkeep,
+            "-a",
+            package,
+            "-d",
+            "apk-pure",
+            "-o",
+            f"arch={TARGET_ABI}",
+            str(downloaded),
+        ],
+        failure="apkeep could not download the Owlet application from APKPure",
+    )
+    return _collect_apkeep_download(downloaded, destination, label="apkpure")
+
+
+def _collect_apkeep_download(
+    downloaded: Path, destination: Path, *, label: str
+) -> Path:
+    """Select one safe application archive produced by an apkeep backend."""
     candidates = sorted(
         path
         for path in downloaded.rglob("*")
@@ -178,7 +260,7 @@ def acquire_with_apkeep(
         return candidates[0]
     if any(path.suffix.lower() != ".apk" for path in candidates):
         raise PreparationError("apkeep produced an ambiguous set of application files")
-    return _bundle_apks(candidates, destination / "owlet-apkeep.apkm")
+    return _bundle_apks(candidates, destination / f"owlet-{label}.apkm")
 
 
 def _runtime_manifest(application: ExtractedOwletApplication) -> dict[str, object]:
@@ -379,6 +461,12 @@ def _parser() -> argparse.ArgumentParser:
     apkeep.add_argument(
         "--package", choices=sorted(OWLET_ANDROID_PACKAGES), default=DEFAULT_PACKAGE
     )
+
+    apkpure = subparsers.add_parser(
+        "apkpure", help="Download a hash-gated ARM64 Dream bundle from APKPure"
+    )
+    apkpure.add_argument("output", type=Path)
+    apkpure.add_argument("--apkeep", default=shutil.which("apkeep") or "apkeep")
     return parser
 
 
@@ -413,14 +501,28 @@ def main() -> int:
                         package=args.package,
                         serial=args.serial,
                     )
-                else:
+                elif args.source == "apkeep":
                     application = acquire_with_apkeep(
                         temporary,
                         apkeep=args.apkeep,
                         config=args.config,
                         package=args.package,
                     )
-                report = prepare_runtime_package(application, args.output)
+                else:
+                    application = acquire_with_apkpure(
+                        temporary,
+                        apkeep=args.apkeep,
+                        package=DEFAULT_PACKAGE,
+                    )
+                report = prepare_runtime_package(
+                    application,
+                    args.output,
+                    trusted_library_sets=(
+                        APKPURE_TRUSTED_DREAM_LIBRARY_SETS
+                        if args.source == "apkpure"
+                        else None
+                    ),
+                )
                 print(json.dumps(report, indent=2))
                 return 0
         report = prepare_runtime_package(application, args.output)
