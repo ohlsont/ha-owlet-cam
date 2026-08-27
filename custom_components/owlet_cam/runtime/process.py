@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import struct
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,14 @@ from .protocol import MAX_HELPER_OUTPUT
 _TERMINATE_TIMEOUT: Final = 5.0
 _MAX_STREAM_FRAME: Final = 4 * 1024 * 1024
 _MAX_AUDIO_FRAME: Final = 64 * 1024
+_SENSOR_FRAME_SIZE: Final = 24
+_SENSOR_KEYS: Final = (
+    "temperature",
+    "humidity",
+    "sound_level",
+    "illuminance",
+    "wifi_signal",
+)
 
 
 class OwletHelperProcessError(RuntimeError):
@@ -155,6 +164,8 @@ class OwletHelperProcessRunner:
         audio_pipe: tuple[int, int] | None = None,
         on_audio_frame: Callable[[int, bytes], Awaitable[None]] | None = None,
         on_audio_error: Callable[[str], Awaitable[None]] | None = None,
+        sensor_pipe: tuple[int, int] | None = None,
+        on_sensor_values: Callable[[dict[str, int]], Awaitable[None]] | None = None,
         cwd: Path | None = None,
         environment: Mapping[str, str] | None = None,
     ) -> bytes:
@@ -163,6 +174,7 @@ class OwletHelperProcessRunner:
         The helper's stdout carries length-prefixed Annex-B H.264. When audio is
         enabled, a separately inherited pipe carries an eight-byte header
         (payload length, codec id, reserved bytes) followed by one audio frame.
+        Optional room telemetry uses a second inherited, fixed-size binary pipe.
         Stderr remains reserved for one bounded, redacted JSON status event.
         """
         if no_frame_timeout <= 0 or not command:
@@ -175,6 +187,11 @@ class OwletHelperProcessRunner:
             audio_read_file: object | None = None
             audio_read_fd = audio_pipe[0] if audio_pipe is not None else -1
             audio_write_fd = audio_pipe[1] if audio_pipe is not None else -1
+            sensor_task: asyncio.Task[None] | None = None
+            sensor_transport: asyncio.ReadTransport | None = None
+            sensor_read_file: object | None = None
+            sensor_read_fd = sensor_pipe[0] if sensor_pipe is not None else -1
+            sensor_write_fd = sensor_pipe[1] if sensor_pipe is not None else -1
             try:
                 self._process = await asyncio.create_subprocess_exec(
                     *arguments,
@@ -187,7 +204,11 @@ class OwletHelperProcessRunner:
                         "LANG": "C",
                         **(environment or {}),
                     },
-                    pass_fds=(audio_write_fd,) if audio_write_fd >= 0 else (),
+                    pass_fds=tuple(
+                        descriptor
+                        for descriptor in (audio_write_fd, sensor_write_fd)
+                        if descriptor >= 0
+                    ),
                     start_new_session=True,
                 )
                 self._record_started()
@@ -195,6 +216,9 @@ class OwletHelperProcessRunner:
                 if audio_write_fd >= 0:
                     os.close(audio_write_fd)
                     audio_write_fd = -1
+                if sensor_write_fd >= 0:
+                    os.close(sensor_write_fd)
+                    sensor_write_fd = -1
                 if (
                     process.stdin is None
                     or process.stdout is None
@@ -216,6 +240,21 @@ class OwletHelperProcessRunner:
                             audio_reader,
                             on_audio_frame=on_audio_frame,
                             on_audio_error=on_audio_error,
+                        )
+                    )
+                if sensor_read_fd >= 0 and on_sensor_values is not None:
+                    sensor_reader = asyncio.StreamReader(limit=_SENSOR_FRAME_SIZE * 4)
+                    sensor_protocol = asyncio.StreamReaderProtocol(sensor_reader)
+                    sensor_read_file = os.fdopen(sensor_read_fd, "rb", buffering=0)
+                    sensor_read_fd = -1
+                    transport, _ = await asyncio.get_running_loop().connect_read_pipe(
+                        lambda: sensor_protocol, sensor_read_file
+                    )
+                    sensor_transport = transport
+                    sensor_task = asyncio.create_task(
+                        _consume_sensor_frames(
+                            sensor_reader,
+                            on_sensor_values=on_sensor_values,
                         )
                     )
                 process.stdin.write(stdin)
@@ -250,6 +289,8 @@ class OwletHelperProcessRunner:
                 stderr = await stderr_task
                 if audio_task is not None:
                     await audio_task
+                if sensor_task is not None:
+                    await sensor_task
                 if returncode != 0:
                     raise OwletHelperProcessError(
                         "Native stream helper failed", code="stream_helper_failed"
@@ -275,10 +316,19 @@ class OwletHelperProcessRunner:
                 if audio_task is not None and not audio_task.done():
                     audio_task.cancel()
                     await asyncio.gather(audio_task, return_exceptions=True)
+                if sensor_transport is not None:
+                    sensor_transport.close()
+                if sensor_task is not None and not sensor_task.done():
+                    sensor_task.cancel()
+                    await asyncio.gather(sensor_task, return_exceptions=True)
                 if audio_read_fd >= 0:
                     os.close(audio_read_fd)
                 if audio_write_fd >= 0:
                     os.close(audio_write_fd)
+                if sensor_read_fd >= 0:
+                    os.close(sensor_read_fd)
+                if sensor_write_fd >= 0:
+                    os.close(sensor_write_fd)
                 if self._process is not None:
                     self._record_reaped(self._process)
                 self._process = None
@@ -372,6 +422,36 @@ async def _consume_audio_frames(
                         await on_audio_error("audio_publish_failed")
     except asyncio.CancelledError:
         raise
+
+
+async def _consume_sensor_frames(
+    reader: asyncio.StreamReader,
+    *,
+    on_sensor_values: Callable[[dict[str, int]], Awaitable[None]],
+) -> None:
+    """Drain bounded, fixed-size sensor records without affecting video."""
+    publishing = True
+    while True:
+        try:
+            record = await reader.readexactly(_SENSOR_FRAME_SIZE)
+        except asyncio.IncompleteReadError:
+            return
+        mask, *raw_values = struct.unpack(">Iiiiii", record)
+        if mask == 0 or mask & ~0x1F:
+            continue
+        values = {
+            key: value
+            for index, (key, value) in enumerate(
+                zip(_SENSOR_KEYS, raw_values, strict=True)
+            )
+            if mask & (1 << index)
+        }
+        if values and publishing:
+            try:
+                await on_sensor_values(values)
+            except Exception:
+                # Entity publication is deliberately isolated from the producer.
+                publishing = False
 
 
 async def _read_limited(

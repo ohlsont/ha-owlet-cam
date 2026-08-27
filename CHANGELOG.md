@@ -2,6 +2,24 @@
 
 All notable changes are documented here. Versions follow semantic versioning.
 
+## [0.9.0] - Unreleased
+
+### Added
+
+- Opt-in embedded temperature, humidity, sound-level, illuminance and Wi-Fi
+  signal entities. Telemetry stays on the existing native camera session and
+  reaches Home Assistant through a dedicated inherited binary pipe.
+- Bounded value validation, cached diagnostics, helper-pipe supervision and
+  tests proving that malformed or failed telemetry publication cannot stop
+  H.264 video.
+
+### Validation status
+
+- The complete 292-test suite passes at 85.22% branch-aware coverage; Ruff,
+  mypy, three helper compilation modes and reproducible AArch64 helper packaging
+  pass. Real Owlet Cam 1 / Yellow readings remain pending and are not yet
+  claimed as supported.
+
 ## [0.8.0] - Unreleased
 
 ### Added

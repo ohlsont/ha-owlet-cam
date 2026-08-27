@@ -36,6 +36,13 @@ teardown before exit. Every helper mode requests Linux parent-death termination
 before reading secrets and rejects launch when it has already lost its Home
 Assistant parent. The Home Assistant process never loads the libraries.
 
+When experimental local sensors are enabled, the stream helper also writes
+fixed-size, big-endian telemetry records to a separately inherited descriptor.
+Temperature is read from the camera's extended frame metadata; humidity, sound,
+illuminance and Wi-Fi RSSI come from the observed bounded realtime-data control
+exchange. Telemetry errors disable that side channel without stopping video or
+audio, and the pipe carries no camera or account credentials.
+
 `scripts/build_arm64_helper_in_container.sh` performs the complete reproducible
 ARM64 build inside the pinned Debian image. It downloads the AOSP APEX only from
 the pinned Android Git commit, verifies its SHA-256 before extraction, builds all

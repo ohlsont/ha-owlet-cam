@@ -11,7 +11,8 @@
 
 Bring an Owlet camera into Home Assistant as a native camera entity. View live
 H.264 video, request snapshots, make recordings, monitor connection health, and
-optionally expose room sensors from a compatible external bridge.
+optionally expose room sensors from the embedded camera session or a compatible
+external bridge.
 
 > [!CAUTION]
 > This project is independent, unofficial, and currently pre-release. Embedded
@@ -45,7 +46,7 @@ ThroughTek.
 | Still images | Yes | Bridge snapshot or stream |
 | `camera.snapshot` | Tested on Yellow | When the source supports it |
 | `camera.record` | Tested on Yellow | When the source supports it |
-| Temperature, humidity, sound, light and Wi-Fi sensors | Not yet supported | When exposed by the bridge |
+| Temperature, humidity, sound, light and Wi-Fi sensors | Experimental; available while the embedded camera session is active | When exposed by the bridge |
 | Owlet cloud login | Required | Not required |
 | Private desktop-prepared `.owletcam` package | Required once during setup | Not required |
 | Architecture | AArch64 only | Any Home Assistant architecture supported by the bridge client |
@@ -256,6 +257,18 @@ When supported by the bridge, the device exposes temperature, humidity, sound
 level, illuminance, Wi-Fi signal, stream FPS, and reconnect count. Temperature
 is requested in metric units and Home Assistant handles display conversion.
 
+### Embedded room sensors
+
+Enable **Experimental local sensors** in the integration options to add room
+temperature, humidity, sound level, illuminance and camera Wi-Fi signal
+entities. They reuse the single embedded camera session: temperature arrives
+with video frames and the other readings use a bounded local telemetry request.
+No second camera connection, MQTT broker or cloud sensor polling is introduced.
+
+The entities retain their last valid value after viewing stops and update again
+when a live-stream session is active. The feature is opt-in until its values
+have been compared with a real Owlet Cam 1.
+
 ### Embedded diagnostics
 
 Runtime status, helper version, application version, ABI, library
@@ -366,7 +379,8 @@ UID, AuthKey, or AV password.
   bridge/media acceptance gate.
 - Embedded incoming audio is experimental. Real Owlet Cam 1 media passed the
   Core-local Yellow decode probe and audible Home Assistant live-view playback.
-  Two-way talk, lullabies, and embedded room sensors are unsupported.
+  Two-way talk and lullabies are unsupported. Embedded room sensors are
+  experimental and update only while an embedded camera session is active.
 - Cloud authentication and fresh camera connection metadata remain necessary;
   the project does not claim fully offline operation.
 - Formal two-hour/overnight viewing, Companion app inside/outside LAN, physical

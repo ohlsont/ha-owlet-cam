@@ -32,7 +32,11 @@ from ..api.exceptions import (
     OwletConnectionError,
     OwletRateLimitError,
 )
-from ..const import DEFAULT_ENABLE_AUDIO, EXPECTED_HELPER_VERSION
+from ..const import (
+    DEFAULT_ENABLE_AUDIO,
+    DEFAULT_EXPERIMENTAL_LOCAL_SENSORS,
+    EXPECTED_HELPER_VERSION,
+)
 from .apk import (
     REQUIRED_LIBRARIES,
     SUPPORTED_ARCHIVE_SUFFIXES,
@@ -117,6 +121,7 @@ _REQUIRED_SYMBOLS: Final = {
             "avInitialize",
             "avClientStartEx",
             "avSendIOCtrl",
+            "avRecvIOCtrl",
             "avRecvFrameData2",
             "avClientStop",
             "avDeInitialize",
@@ -209,6 +214,12 @@ class RuntimeSnapshot:
     audio_native_framing: str | None = None
     audio_last_frame_at: datetime | None = None
     audio_last_error_code: str | None = None
+    temperature: int | None = None
+    humidity: int | None = None
+    sound_level: int | None = None
+    illuminance: int | None = None
+    wifi_signal: int | None = None
+    last_sensor_update_at: datetime | None = None
     application_status: str = "not_uploaded"
     last_application_upload_at: datetime | None = None
     last_application_upload_size: int | None = None
@@ -232,6 +243,7 @@ class OwletRuntimeManager:
         reconnect_backoff: float = 30.0,
         retain_application: bool = False,
         enable_audio: bool = DEFAULT_ENABLE_AUDIO,
+        enable_local_sensors: bool = DEFAULT_EXPERIMENTAL_LOCAL_SENSORS,
     ) -> None:
         self._hass = hass
         self._root = root
@@ -251,6 +263,7 @@ class OwletRuntimeManager:
         self._reconnect_backoff = max(0.0, reconnect_backoff)
         self._retain_application = retain_application
         self._audio_enabled = enable_audio
+        self._local_sensors_enabled = enable_local_sensors
         self.snapshot = RuntimeSnapshot(
             audio_status="idle" if enable_audio else "disabled"
         )
@@ -298,6 +311,11 @@ class OwletRuntimeManager:
     def stream_source_url(self) -> str | None:
         """Return the loopback-only URL without starting any I/O."""
         return self._stream_server.url
+
+    @property
+    def local_sensors_enabled(self) -> bool:
+        """Return whether the optional embedded telemetry path is enabled."""
+        return self._local_sensors_enabled
 
     def async_add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
         """Register a synchronous state listener."""
@@ -924,6 +942,9 @@ class OwletRuntimeManager:
                 audio_pipe: tuple[int, int] | None = (
                     os.pipe() if self._audio_enabled else None
                 )
+                sensor_pipe: tuple[int, int] | None = (
+                    os.pipe() if self._local_sensors_enabled else None
+                )
                 payload = _secret_json_payload(
                     sdk_key=sdk_key,
                     uid=credentials.uid,
@@ -931,6 +952,8 @@ class OwletRuntimeManager:
                     av_password=credentials.av_password,
                     output_fd=audio_pipe[1] if audio_pipe is not None else 3,
                     audio_enabled=self._audio_enabled,
+                    sensor_fd=sensor_pipe[1] if sensor_pipe is not None else 3,
+                    sensors_enabled=self._local_sensors_enabled,
                 )
                 del credentials
                 command, environment = self._helper_invocation(
@@ -954,6 +977,12 @@ class OwletRuntimeManager:
                     on_audio_error=(
                         self._async_record_audio_error
                         if audio_pipe is not None
+                        else None
+                    ),
+                    sensor_pipe=sensor_pipe,
+                    on_sensor_values=(
+                        self._async_publish_sensor_values
+                        if sensor_pipe is not None
                         else None
                     ),
                     cwd=prepared.manifest.root,
@@ -1063,6 +1092,30 @@ class OwletRuntimeManager:
                 "Owlet Cam audio became unavailable; video continues (code: %s)",
                 code,
             )
+            self._notify_listeners()
+
+    async def _async_publish_sensor_values(self, values: dict[str, int]) -> None:
+        """Cache validated local telemetry received from the isolated helper."""
+        accepted = False
+        ranges = {
+            "temperature": (-20, 60),
+            "humidity": (0, 100),
+            "sound_level": (0, 200),
+            "illuminance": (0, 200_000),
+            "wifi_signal": (-150, 0),
+        }
+        for key, (minimum, maximum) in ranges.items():
+            value = values.get(key)
+            if (
+                value is None
+                or isinstance(value, bool)
+                or not minimum <= value <= maximum
+            ):
+                continue
+            setattr(self.snapshot, key, value)
+            accepted = True
+        if accepted:
+            self.snapshot.last_sensor_update_at = datetime.now(UTC)
             self._notify_listeners()
 
     def _record_stream_interruption(self, code: str) -> None:
@@ -1244,6 +1297,17 @@ class OwletRuntimeManager:
                         self.snapshot.audio_last_frame_at
                     ),
                     "last_error_code": self.snapshot.audio_last_error_code,
+                },
+                "local_sensors": {
+                    "enabled": self._local_sensors_enabled,
+                    "temperature": self.snapshot.temperature,
+                    "humidity": self.snapshot.humidity,
+                    "sound_level": self.snapshot.sound_level,
+                    "illuminance": self.snapshot.illuminance,
+                    "wifi_signal": self.snapshot.wifi_signal,
+                    "last_update_at": _optional_isoformat(
+                        self.snapshot.last_sensor_update_at
+                    ),
                 },
             },
             "helper_process": process_diagnostics,
@@ -1818,6 +1882,8 @@ def _secret_json_payload(
     av_password: str,
     output_fd: int | None = None,
     audio_enabled: bool | None = None,
+    sensor_fd: int | None = None,
+    sensors_enabled: bool | None = None,
 ) -> bytearray:
     # JSON encoding creates one short-lived in-memory string, never a file,
     # environment variable, command argument, diagnostic value, or log record.
@@ -1831,6 +1897,10 @@ def _secret_json_payload(
         values["output_fd"] = str(output_fd)
     if audio_enabled is not None:
         values["audio_enabled"] = "1" if audio_enabled else "0"
+    if sensor_fd is not None:
+        values["sensor_fd"] = str(sensor_fd)
+    if sensors_enabled is not None:
+        values["sensors_enabled"] = "1" if sensors_enabled else "0"
     payload = json.dumps(
         values,
         separators=(",", ":"),

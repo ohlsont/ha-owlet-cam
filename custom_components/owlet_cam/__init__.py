@@ -22,6 +22,7 @@ from .const import (
     CONF_CAMERA_NAME,
     CONF_EMAIL,
     CONF_ENABLE_AUDIO,
+    CONF_EXPERIMENTAL_LOCAL_SENSORS,
     CONF_IDLE_TIMEOUT,
     CONF_KEEP_WARM,
     CONF_MODE,
@@ -35,6 +36,7 @@ from .const import (
     CONF_VERIFY_TLS,
     DEFAULT_BRIDGE_TIMEOUT,
     DEFAULT_ENABLE_AUDIO,
+    DEFAULT_EXPERIMENTAL_LOCAL_SENSORS,
     DEFAULT_IDLE_TIMEOUT,
     DEFAULT_KEEP_WARM,
     DEFAULT_NO_FRAME_TIMEOUT,
@@ -106,6 +108,10 @@ async def async_setup_entry(
                 CONF_RETAIN_APPLICATION, DEFAULT_RETAIN_APPLICATION
             ),
             enable_audio=entry.options.get(CONF_ENABLE_AUDIO, DEFAULT_ENABLE_AUDIO),
+            enable_local_sensors=entry.options.get(
+                CONF_EXPERIMENTAL_LOCAL_SENSORS,
+                DEFAULT_EXPERIMENTAL_LOCAL_SENSORS,
+            ),
         )
         await runtime_manager.async_refresh_proprietary_state()
     elif entry.data.get(CONF_MODE) == MODE_EXTERNAL:

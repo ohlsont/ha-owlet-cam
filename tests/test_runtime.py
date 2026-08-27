@@ -722,6 +722,49 @@ async def test_process_runner_drains_audio_from_a_separate_inherited_pipe(
     assert runner.diagnostics()["all_reaped"] is True
 
 
+async def test_process_runner_drains_local_sensors_from_inherited_pipe(
+    tmp_path: Path,
+) -> None:
+    runner = OwletHelperProcessRunner()
+    received: list[dict[str, int]] = []
+    read_descriptor, write_descriptor = os.pipe()
+
+    async def receive_sensor_values(values: dict[str, int]) -> None:
+        received.append(values)
+
+    command = (
+        sys.executable,
+        "-c",
+        "import os,struct,sys; sys.stdin.buffer.read(); "
+        "record=struct.pack('>Iiiiii',31,22,47,33,9,-61); "
+        "os.write(int(sys.argv[1]),record); os.close(int(sys.argv[1])); "
+        "v=b'video'; sys.stdout.buffer.write(len(v).to_bytes(4,'big')+v); "
+        "sys.stdout.buffer.flush()",
+        str(write_descriptor),
+    )
+
+    await runner.async_stream(
+        command,
+        stdin=bytearray(b"secret\n"),
+        no_frame_timeout=5,
+        on_frame=AsyncMock(),
+        sensor_pipe=(read_descriptor, write_descriptor),
+        on_sensor_values=receive_sensor_values,
+        cwd=tmp_path,
+    )
+
+    assert received == [
+        {
+            "temperature": 22,
+            "humidity": 47,
+            "sound_level": 33,
+            "illuminance": 9,
+            "wifi_signal": -61,
+        }
+    ]
+    assert runner.diagnostics()["all_reaped"] is True
+
+
 async def test_malformed_audio_does_not_terminate_video_stream(tmp_path: Path) -> None:
     runner = OwletHelperProcessRunner()
     read_descriptor, write_descriptor = os.pipe()
@@ -1516,6 +1559,55 @@ async def test_runtime_manager_tracks_audio_without_changing_video_health(
     assert manager.snapshot.audio_native_framing == "bare"
     assert manager.snapshot.audio_frames == 2
     assert manager.diagnostics()["stream"]["audio"]["codec"] == "aac_kalay"
+
+
+async def test_runtime_manager_validates_and_caches_local_sensor_values(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path,
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+        runner=AsyncMock(spec=OwletHelperProcessRunner),
+        enable_local_sensors=True,
+    )
+
+    await manager._async_publish_sensor_values(
+        {
+            "temperature": 21,
+            "humidity": 46,
+            "sound_level": 32,
+            "illuminance": 7,
+            "wifi_signal": -58,
+        }
+    )
+    first_update = manager.snapshot.last_sensor_update_at
+    await manager._async_publish_sensor_values(
+        {
+            "temperature": 900,
+            "humidity": -1,
+            "sound_level": 201,
+            "illuminance": -3,
+            "wifi_signal": 4,
+        }
+    )
+
+    assert manager.snapshot.temperature == 21
+    assert manager.snapshot.humidity == 46
+    assert manager.snapshot.sound_level == 32
+    assert manager.snapshot.illuminance == 7
+    assert manager.snapshot.wifi_signal == -58
+    assert manager.snapshot.last_sensor_update_at == first_update
+    assert manager.diagnostics()["stream"]["local_sensors"] == {
+        "enabled": True,
+        "temperature": 21,
+        "humidity": 46,
+        "sound_level": 32,
+        "illuminance": 7,
+        "wifi_signal": -58,
+        "last_update_at": first_update.isoformat() if first_update else None,
+    }
 
 
 async def test_live_stream_requires_the_versioned_stream_helper(

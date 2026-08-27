@@ -11,6 +11,7 @@ from custom_components.owlet_cam.const import (
     CONF_CAMERA_DSN,
     CONF_CAMERA_NAME,
     CONF_EMAIL,
+    CONF_EXPERIMENTAL_LOCAL_SENSORS,
     CONF_MODE,
     CONF_PASSWORD,
     CONF_REGION,
@@ -61,6 +62,7 @@ async def test_embedded_entity_properties_use_only_cached_data(
             CONF_CAMERA_NAME: "Nursery",
         },
         unique_id=DSN,
+        options={CONF_EXPERIMENTAL_LOCAL_SENSORS: True},
     )
     entry.add_to_hass(hass)
     expiry = datetime.now(UTC) + timedelta(hours=1)
@@ -100,6 +102,11 @@ async def test_embedded_entity_properties_use_only_cached_data(
         manager.snapshot.last_stream_probe_at = expiry
         manager.snapshot.audio_status = "streaming"
         manager.snapshot.audio_codec_id = 0x86
+        manager.snapshot.temperature = 21
+        manager.snapshot.humidity = 46
+        manager.snapshot.sound_level = 32
+        manager.snapshot.illuminance = 7
+        manager.snapshot.wifi_signal = -58
         manager._notify_listeners()
         await hass.async_block_till_done()
         resolution = hass.states.get("sensor.nursery_detected_resolution")
@@ -109,6 +116,11 @@ async def test_embedded_entity_properties_use_only_cached_data(
         bitrate = hass.states.get("sensor.nursery_stream_bitrate")
         audio_status = hass.states.get("sensor.nursery_audio_status")
         audio_codec = hass.states.get("sensor.nursery_audio_codec")
+        temperature = hass.states.get("sensor.nursery_temperature")
+        humidity = hass.states.get("sensor.nursery_humidity")
+        sound_level = hass.states.get("sensor.nursery_sound_level")
+        illuminance = hass.states.get("sensor.nursery_illuminance")
+        wifi_signal = hass.states.get("sensor.nursery_wi_fi_signal")
 
         manager.snapshot.audio_codec_id = 0x8A
         manager._notify_listeners()
@@ -134,6 +146,17 @@ async def test_embedded_entity_properties_use_only_cached_data(
     assert audio_status.state == "streaming"
     assert audio_codec is not None
     assert audio_codec.state == "AAC-LC (raw)"
+    assert temperature is not None
+    assert temperature.state == "21"
+    assert temperature.attributes["unit_of_measurement"] == "°C"
+    assert humidity is not None
+    assert humidity.state == "46"
+    assert sound_level is not None
+    assert sound_level.state == "32"
+    assert illuminance is not None
+    assert illuminance.state == "7"
+    assert wifi_signal is not None
+    assert wifi_signal.state == "-58"
     assert unsupported_audio_codec is not None
     assert unsupported_audio_codec.state == "G.711 A-law"
     validate.assert_not_awaited()

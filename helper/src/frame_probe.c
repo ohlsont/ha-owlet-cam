@@ -44,6 +44,16 @@ extern signal_handler_fn signal(int signal_number, signal_handler_fn handler);
 #define AV_OUTPUT_SIZE 32
 #define IOCTRL_VIDEO_START 0x01ff
 #define IOCTRL_AUDIO_START 0x0300
+#define IOCTRL_REALTIME_REQUEST 960
+#define IOCTRL_REALTIME_RESPONSE 961
+#define SENSOR_FRAME_INTERVAL_MS 1000
+#define SENSOR_REALTIME_INTERVAL_MS 2000
+#define SENSOR_RESPONSE_TIMEOUT_MS 1000
+#define SENSOR_TEMPERATURE 0x01
+#define SENSOR_HUMIDITY 0x02
+#define SENSOR_SOUND_LEVEL 0x04
+#define SENSOR_ILLUMINANCE 0x08
+#define SENSOR_WIFI_SIGNAL 0x10
 #define AV_ER_DATA_NOREADY -20012
 #define AV_ER_LOSED_THIS_FRAME -20014
 #define AV_ER_INCOMPLETE_FRAME -20013
@@ -96,6 +106,8 @@ typedef int (*av_initialize_fn)(int maximum_channels);
 typedef int (*av_client_start_ex_fn)(void *input, void *output);
 typedef int (*av_send_ioctrl_fn)(int av_index, uint32_t type,
                                  const char *data, int size);
+typedef int (*av_recv_ioctrl_fn)(int av_index, uint32_t *type, char *data,
+                                 int data_max, uint32_t timeout_ms);
 typedef int (*av_recv_frame2_fn)(int av_index, char *frame_data,
                                  int frame_data_max, int *frame_data_size,
                                  int *frame_size, char *frame_info,
@@ -122,6 +134,7 @@ struct api {
     av_initialize_fn av_initialize;
     av_client_start_ex_fn av_client_start_ex;
     av_send_ioctrl_fn av_send_ioctrl;
+    av_recv_ioctrl_fn av_recv_ioctrl;
     av_recv_frame2_fn av_recv_frame2;
     av_recv_audio_fn av_recv_audio;
     av_client_stop_fn av_client_stop;
@@ -138,6 +151,8 @@ struct secrets {
 #endif
 #ifdef STREAM_CAPTURE
     int audio_enabled;
+    int sensors_enabled;
+    int sensor_fd;
 #endif
 };
 
@@ -242,6 +257,34 @@ static int write_audio_frame(int fd, uint16_t codec_id, const uint8_t *data,
     header[7] = 0;
     return write_all_fd(fd, header, sizeof(header)) &&
            write_all_fd(fd, data, size);
+}
+
+static void put_be32(uint8_t *target, uint32_t value) {
+    target[0] = (uint8_t)(value >> 24);
+    target[1] = (uint8_t)(value >> 16);
+    target[2] = (uint8_t)(value >> 8);
+    target[3] = (uint8_t)value;
+}
+
+static int get_le32(const uint8_t *source) {
+    uint32_t value = (uint32_t)source[0] |
+                     ((uint32_t)source[1] << 8) |
+                     ((uint32_t)source[2] << 16) |
+                     ((uint32_t)source[3] << 24);
+    return (int)value;
+}
+
+static int write_sensor_values(int fd, uint32_t mask, int temperature,
+                               int humidity, int sound_level, int illuminance,
+                               int wifi_signal) {
+    uint8_t record[24];
+    put_be32(record, mask);
+    put_be32(record + 4, (uint32_t)temperature);
+    put_be32(record + 8, (uint32_t)humidity);
+    put_be32(record + 12, (uint32_t)sound_level);
+    put_be32(record + 16, (uint32_t)illuminance);
+    put_be32(record + 20, (uint32_t)wifi_signal);
+    return write_all_fd(fd, record, sizeof(record));
 }
 #endif
 
@@ -437,7 +480,11 @@ static int read_secrets(struct secrets *values) {
 #endif
 #ifdef STREAM_CAPTURE
     char audio_enabled[4];
+    char sensors_enabled[4];
+    char sensor_fd[16];
     zero_bytes(audio_enabled, sizeof(audio_enabled));
+    zero_bytes(sensors_enabled, sizeof(sensors_enabled));
+    zero_bytes(sensor_fd, sizeof(sensor_fd));
 #endif
     zero_bytes(input, sizeof(input));
     while (used + 1 < sizeof(input)) {
@@ -472,6 +519,13 @@ static int read_secrets(struct secrets *values) {
                               sizeof(audio_enabled))
         || (audio_enabled[0] != '0' && audio_enabled[0] != '1')
         || audio_enabled[1] != '\0'
+        || !parse_json_string(input, "sensors_enabled", sensors_enabled,
+                              sizeof(sensors_enabled))
+        || (sensors_enabled[0] != '0' && sensors_enabled[0] != '1')
+        || sensors_enabled[1] != '\0'
+        || !parse_json_string(input, "sensor_fd", sensor_fd,
+                              sizeof(sensor_fd))
+        || !parse_output_fd(sensor_fd, &values->sensor_fd)
 #endif
     ) {
         scrub(input, sizeof(input));
@@ -480,11 +534,14 @@ static int read_secrets(struct secrets *values) {
 #endif
 #ifdef STREAM_CAPTURE
         scrub(audio_enabled, sizeof(audio_enabled));
+        scrub(sensors_enabled, sizeof(sensors_enabled));
+        scrub(sensor_fd, sizeof(sensor_fd));
 #endif
         return 0;
     }
 #ifdef STREAM_CAPTURE
     values->audio_enabled = audio_enabled[0] == '1';
+    values->sensors_enabled = sensors_enabled[0] == '1';
 #endif
     scrub(input, sizeof(input));
 #if defined(SNAPSHOT_CAPTURE) || defined(STREAM_CAPTURE)
@@ -492,6 +549,8 @@ static int read_secrets(struct secrets *values) {
 #endif
 #ifdef STREAM_CAPTURE
     scrub(audio_enabled, sizeof(audio_enabled));
+    scrub(sensors_enabled, sizeof(sensors_enabled));
+    scrub(sensor_fd, sizeof(sensor_fd));
 #endif
     return 1;
 }
@@ -782,7 +841,8 @@ static void emit_success(const struct probe_stats *stats,
 }
 
 static int load_api(struct api *api, void **global_handle, void **iotc_handle,
-                    void **av_handle, int audio_requested) {
+                    void **av_handle, int audio_requested,
+                    int sensors_requested) {
     *global_handle = dlopen("libTUTKGlobalAPIs.so", RTLD_NOW | RTLD_GLOBAL);
     *iotc_handle = dlopen("libIOTCAPIs.so", RTLD_NOW | RTLD_GLOBAL);
     *av_handle = dlopen("libAVAPIs.so", RTLD_NOW | RTLD_GLOBAL);
@@ -809,6 +869,9 @@ static int load_api(struct api *api, void **global_handle, void **iotc_handle,
     LOAD(api->av_client_start_ex, *av_handle, "avClientStartEx");
     LOAD(api->av_send_ioctrl, *av_handle, "avSendIOCtrl");
     LOAD(api->av_recv_frame2, *av_handle, "avRecvFrameData2");
+    if (sensors_requested) {
+        LOAD(api->av_recv_ioctrl, *av_handle, "avRecvIOCtrl");
+    }
     if (audio_requested) {
         LOAD(api->av_recv_audio, *av_handle, "avRecvAudioData");
     }
@@ -840,6 +903,15 @@ static int run_probe(void) {
     unsigned long started_ms = monotonic_ms();
     unsigned long first_frame_started_ms = 0;
 #ifdef STREAM_CAPTURE
+    unsigned long last_frame_sensor_ms = 0;
+    unsigned long last_realtime_request_ms = 0;
+    unsigned long realtime_deadline_ms = 0;
+    int realtime_pending = 0;
+    char realtime_request[4] = {0};
+    char realtime_response[64];
+    uint32_t realtime_type = 0;
+#endif
+#ifdef STREAM_CAPTURE
     signal(SIGTERM, request_stop);
     signal(SIGINT, request_stop);
     signal(SIGPIPE, SIG_IGN);
@@ -857,15 +929,18 @@ static int run_probe(void) {
     zero_bytes(&session, sizeof(session));
     zero_bytes(frame_info, sizeof(frame_info));
     zero_bytes(audio_info, sizeof(audio_info));
+#ifdef STREAM_CAPTURE
+    zero_bytes(realtime_response, sizeof(realtime_response));
+#endif
     if (!read_secrets(&values)) {
         emit_error("invalid_input", -1);
         goto cleanup;
     }
     if (!load_api(&api, &global_handle, &iotc_handle, &av_handle,
 #ifdef STREAM_CAPTURE
-                  values.audio_enabled
+                  values.audio_enabled, values.sensors_enabled
 #else
-                  0
+                  0, 0
 #endif
                   )) {
         emit_error("library_symbols", -1);
@@ -985,6 +1060,22 @@ static int run_probe(void) {
                     emit_error("stream_output", -1);
                     goto cleanup;
                 }
+                if (values.sensors_enabled && info_size >= 20) {
+                    unsigned long now_ms = monotonic_ms();
+                    if (now_ms - last_frame_sensor_ms >=
+                        SENSOR_FRAME_INTERVAL_MS) {
+                        int temperature =
+                            get_le32((const uint8_t *)frame_info + 16);
+                        if (temperature >= -20 && temperature <= 60) {
+                            if (!write_sensor_values(
+                                    values.sensor_fd, SENSOR_TEMPERATURE,
+                                    temperature, 0, 0, 0, 0)) {
+                                values.sensors_enabled = 0;
+                            }
+                        }
+                        last_frame_sensor_ms = now_ms;
+                    }
+                }
             }
         } else if (native_code != AV_ER_DATA_NOREADY &&
                    native_code != AV_ER_LOSED_THIS_FRAME &&
@@ -1009,6 +1100,50 @@ static int run_probe(void) {
                        audio_code != AV_ER_LOSED_THIS_FRAME &&
                        audio_code != AV_ER_INCOMPLETE_FRAME) {
                 values.audio_enabled = 0;
+            }
+        }
+        if (values.sensors_enabled) {
+            unsigned long now_ms = monotonic_ms();
+            if (!realtime_pending &&
+                now_ms - last_realtime_request_ms >=
+                    SENSOR_REALTIME_INTERVAL_MS) {
+                int send_code = api.av_send_ioctrl(
+                    av_index, IOCTRL_REALTIME_REQUEST, realtime_request,
+                    sizeof(realtime_request));
+                last_realtime_request_ms = now_ms;
+                if (send_code >= 0) {
+                    realtime_pending = 1;
+                    realtime_deadline_ms =
+                        now_ms + SENSOR_RESPONSE_TIMEOUT_MS;
+                }
+            }
+            if (realtime_pending) {
+                int realtime_code = api.av_recv_ioctrl(
+                    av_index, &realtime_type, realtime_response,
+                    sizeof(realtime_response), 0);
+                if (realtime_code >= 16 &&
+                    realtime_type == IOCTRL_REALTIME_RESPONSE) {
+                    uint32_t mask = SENSOR_TEMPERATURE | SENSOR_HUMIDITY |
+                                    SENSOR_SOUND_LEVEL | SENSOR_ILLUMINANCE;
+                    int wifi_signal = 0;
+                    if (realtime_code >= 20) {
+                        mask |= SENSOR_WIFI_SIGNAL;
+                        wifi_signal = get_le32(
+                            (const uint8_t *)realtime_response + 16);
+                    }
+                    if (!write_sensor_values(
+                            values.sensor_fd, mask,
+                            get_le32((const uint8_t *)realtime_response),
+                            get_le32((const uint8_t *)realtime_response + 4),
+                            get_le32((const uint8_t *)realtime_response + 8),
+                            get_le32((const uint8_t *)realtime_response + 12),
+                            wifi_signal)) {
+                        values.sensors_enabled = 0;
+                    }
+                    realtime_pending = 0;
+                } else if (now_ms >= realtime_deadline_ms) {
+                    realtime_pending = 0;
+                }
             }
         }
         if (native_code == AV_ER_DATA_NOREADY) usleep(3000);
@@ -1088,6 +1223,10 @@ cleanup:
     scrub(&session, sizeof(session));
     scrub(frame_info, sizeof(frame_info));
     scrub(audio_info, sizeof(audio_info));
+#ifdef STREAM_CAPTURE
+    scrub(realtime_request, sizeof(realtime_request));
+    scrub(realtime_response, sizeof(realtime_response));
+#endif
     scrub(frame_buffer, sizeof(frame_buffer));
     scrub(audio_buffer, sizeof(audio_buffer));
     if (result == 0)

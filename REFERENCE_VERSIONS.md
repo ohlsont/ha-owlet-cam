@@ -1,7 +1,7 @@
 # Reference versions
 
-Inspected on **2026-08-21**; the bridge API and audio observations were rechecked
-on **2026-08-26**.
+Inspected on **2026-08-21**; bridge API, audio and room-telemetry observations
+were narrowly rechecked through **2026-08-27**.
 Commit hashes were resolved from each repository's
 default branch and the licence determination was made from files present at
 that exact shallow checkout. No unlicensed implementation source was copied
@@ -9,7 +9,7 @@ into this repository.
 
 | Repository | Commit | Commit date | Licence at commit | Files or observations used | Source copied | Clean-room notes |
 |---|---|---:|---|---|---|---|
-| `btoth525/Owlet-To-Rtsp` | `132620a85ff422b451e52fdbf2076abb3975e9ec` | 2026-08-12 | **No licence file found** | `native-bridge/bridge/owlet_api.py`, `webapp.py`, and `README.md`: observed the cloud/KMS sequence and the exact response shapes for `/api/status`, `/api/cameras`, metric `/api/vitals`, per-camera snapshots, advertised RTSP ports, optional Basic authentication, and absent API-version field | No | Observations were reduced to independently written typed models, bounded HTTP parsing, and hand-authored fixtures. The adapter ignores the UID/AuthKey/password fields exposed by the camera-list response. No expression, control flow, logging, or source was copied |
+| `btoth525/Owlet-To-Rtsp` | `132620a85ff422b451e52fdbf2076abb3975e9ec` | 2026-08-12 | **No licence file found** | `native-bridge/bridge/owlet_api.py`, `webapp.py`, `native-bridge/docs/owlet-cam-sensors.md`, and `README.md`: observed the cloud/KMS sequence, bridge response shapes, extended-frame temperature field, and bounded realtime room-telemetry request/response ABI | No | Observations were reduced to independently written typed models, bounded HTTP/binary parsing, inherited-pipe framing, value gates, and hand-authored fixtures. The adapter ignores returned camera credentials. No expression, control flow, logging, threading model, or source was copied |
 | `jquick/owlet-go` | `27142735e23d90d38d80d307e0c66294c61272d4` | 2026-07-13 | **No licence file found** | `README.md`, `Dockerfile`, `internal/tutk/`, `stream.go`, and `tools/`: observed the apkeep/SDK-key workflow, generic glibc Kalay library choice, native connection/AV lifecycle, raw H.264/AAC handling, single-session viewer sharing, reconnect behavior, and ARM64 container considerations | No | No source, headers, constants, or struct definitions were copied. Camera credential capture requires an installed interception CA and is excluded; the bundled third-party Kalay binary path is also excluded. Equivalent behavior must come from public SDK ABI material, independent observations, and our own tests |
 | `AlexxIT/WebRTC` | `0c5421ba97ffa9a2458e0074466340ec411ac92b` | 2025-11-26 | MIT | Root `LICENSE`; lifecycle study deferred | No | Any later architectural observations will be documented independently |
 | `AlexxIT/go2rtc` | `c245815e75e2a5fd60b4290f12bfc04e55a984d3` | 2026-07-13 | MIT | Root `LICENSE`; documented HTTP H.264, RTSP and WebRTC behavior was used only to evaluate Milestone 6 media boundaries | No | No go2rtc source or binary is included. The final implementation independently packages copied H.264 into timestamped MPEG-TS on a loopback HTTP URL and gives that supported source to Home Assistant's managed stream stack, avoiding a second process |

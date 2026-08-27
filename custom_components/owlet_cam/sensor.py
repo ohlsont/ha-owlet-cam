@@ -112,7 +112,7 @@ _RUNTIME_DESCRIPTIONS = (
     ),
 )
 
-_BRIDGE_DESCRIPTIONS = (
+_ROOM_SENSOR_DESCRIPTIONS = (
     SensorEntityDescription(
         key="temperature",
         translation_key="temperature",
@@ -149,6 +149,10 @@ _BRIDGE_DESCRIPTIONS = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+)
+
+_BRIDGE_DESCRIPTIONS = (
+    *_ROOM_SENSOR_DESCRIPTIONS,
     SensorEntityDescription(
         key="stream_fps",
         translation_key="stream_fps",
@@ -184,6 +188,11 @@ async def async_setup_entry(
                 OwletCamRuntimeSensor(entry, description=description)
                 for description in _RUNTIME_DESCRIPTIONS
             )
+            if entry.runtime_data.runtime_manager.local_sensors_enabled:
+                entities.extend(
+                    OwletCamRuntimeSensor(entry, description=description)
+                    for description in _ROOM_SENSOR_DESCRIPTIONS
+                )
         async_add_entities(entities)
         return
     if entry.data.get(CONF_MODE) == MODE_EXTERNAL:
@@ -350,4 +359,13 @@ class OwletCamRuntimeSensor(OwletCamRuntimeEntity, SensorEntity):
                     0x8E: "MP3",
                     0x8F: "G.726",
                 }.get(codec_id)
+            case (
+                "temperature"
+                | "humidity"
+                | "sound_level"
+                | "illuminance"
+                | "wifi_signal"
+            ):
+                value = getattr(snapshot, self.entity_description.key)
+                return value if isinstance(value, int | float) else None
         return None
