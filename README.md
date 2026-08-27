@@ -42,7 +42,8 @@ Embedded incoming audio is experimental in 0.8.0 and remains disabled by
 default. Its separate-pipe and AAC/MPEG-TS path has automated, synthetic, and
 bounded real-camera Yellow FFprobe coverage. Owlet Cam 1 supplied AAC-LC in
 native ADTS framing at 8 kHz mono without audio or video transcoding. Audible
-browser playback validation is still pending. Two-way talk is not supported.
+Home Assistant live-view playback was confirmed on Yellow. Two-way talk is not
+supported.
 
 ## Choose a connection mode
 
@@ -308,9 +309,8 @@ UID, AuthKey, or AV password.
 - External bridge mode has automated compatibility tests but no completed real
   bridge/media acceptance gate.
 - Embedded incoming audio is experimental. Real Owlet Cam 1 media passed the
-  Core-local Yellow decode probe, while audible browser playback remains to be
-  confirmed. Two-way talk, lullabies, and embedded room sensors are
-  unsupported.
+  Core-local Yellow decode probe and audible Home Assistant live-view playback.
+  Two-way talk, lullabies, and embedded room sensors are unsupported.
 - Cloud authentication and fresh camera connection metadata remain necessary;
   the project does not claim fully offline operation.
 - Formal two-hour/overnight viewing, Companion app inside/outside LAN, physical

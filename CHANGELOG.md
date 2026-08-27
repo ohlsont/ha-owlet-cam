@@ -23,8 +23,8 @@ All notable changes are documented here. Versions follow semantic versioning.
 - Python packetizer, separate-pipe supervision, malformed-audio fallback and
   strict FFprobe parsing are covered by automated tests. On Home Assistant
   Yellow, a real Owlet Cam 1 supplied native ADTS AAC-LC; Core-local FFprobe
-  decoded H.264 plus 8 kHz mono AAC and counted both tracks. Browser-audibility
-  confirmation remains pending.
+  decoded H.264 plus 8 kHz mono AAC and counted both tracks. The user then
+  confirmed audible room audio in Home Assistant's live camera view.
 - Added bounded, allowlisted FFprobe observations and stable parse error codes.
   These exposed and corrected the camera's public `0x88` codec-label/framing
   mismatch without retaining URLs, paths, stderr, tags, or media bytes.
