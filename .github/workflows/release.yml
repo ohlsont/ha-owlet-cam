@@ -61,7 +61,7 @@ jobs:
       - name: Inspect release archives
         run: >-
           uv run python scripts/inspect_release_assets.py
-          dist/ha-owlet-cam.zip dist/owlet-cam-helper-aarch64.tar.gz \
+          dist/ha-owlet-cam.zip dist/owlet-cam-helper-aarch64.tar.gz
           dist/owlet-cam-prepare.pyz
       - uses: softprops/action-gh-release@v2
         with:

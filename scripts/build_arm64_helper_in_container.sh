@@ -3,7 +3,7 @@ set -eu
 
 # Run inside the pinned Debian container documented in helper/build/README.md:
 # docker run --rm --network=bridge \
-#   -e HELPER_VERSION=0.9.0 \
+#   -e HELPER_VERSION=0.9.1 \
 #   -v "$PWD:/source:ro" -v "/absolute/output:/output" \
 #   debian@sha256:1710bde34461551a19a47c787885ec9ad7058d9a5bead2affb8d088fa2f8502b \
 #   /bin/sh /source/scripts/build_arm64_helper_in_container.sh
