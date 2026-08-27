@@ -850,6 +850,7 @@ async def test_options_are_grouped_and_reload_exactly_once(
     with patch.object(hass.config_entries, "async_schedule_reload") as schedule_reload:
         result = await hass.config_entries.options.async_init(entry.entry_id)
         assert result["step_id"] == "general"
+        assert result["data_schema"]({})[CONF_ENABLE_AUDIO] is True
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], general
         )

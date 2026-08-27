@@ -32,7 +32,7 @@ from ..api.exceptions import (
     OwletConnectionError,
     OwletRateLimitError,
 )
-from ..const import EXPECTED_HELPER_VERSION
+from ..const import DEFAULT_ENABLE_AUDIO, EXPECTED_HELPER_VERSION
 from .apk import (
     REQUIRED_LIBRARIES,
     SUPPORTED_ARCHIVE_SUFFIXES,
@@ -231,7 +231,7 @@ class OwletRuntimeManager:
         no_frame_timeout: float = 15.0,
         reconnect_backoff: float = 30.0,
         retain_application: bool = False,
-        enable_audio: bool = False,
+        enable_audio: bool = DEFAULT_ENABLE_AUDIO,
     ) -> None:
         self._hass = hass
         self._root = root

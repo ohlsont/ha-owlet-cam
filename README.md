@@ -28,7 +28,7 @@ ThroughTek.
 |---|---|---|
 | Native Home Assistant camera | Yes | Yes |
 | Live video | Bridge-provided RTSP | H.264 through a loopback-only MPEG-TS source |
-| Incoming audio | Bridge-provided | Experimental AAC-LC; disabled by default |
+| Incoming audio | Bridge-provided | Experimental AAC-LC; enabled by default |
 | Still images | Bridge snapshot or stream | Yes |
 | `camera.snapshot` | When the source supports it | Tested on Yellow |
 | `camera.record` | When the source supports it | Tested on Yellow |
@@ -38,8 +38,8 @@ ThroughTek.
 | Architecture | Any Home Assistant architecture supported by the bridge client | AArch64 only |
 | Validation status | Automated fake-bridge coverage; real bridge gate pending | Bounded real Owlet Cam 1 validation on Yellow |
 
-Embedded incoming audio is experimental in 0.8.0 and remains disabled by
-default. Its separate-pipe and AAC/MPEG-TS path has automated, synthetic, and
+Embedded incoming audio is experimental in 0.8.0 and enabled by default. Its
+separate-pipe and AAC/MPEG-TS path has automated, synthetic, and
 bounded real-camera Yellow FFprobe coverage. Owlet Cam 1 supplied AAC-LC in
 native ADTS framing at 8 kHz mono without audio or video transcoding. Audible
 Home Assistant live-view playback was confirmed on Yellow. Two-way talk is not
@@ -231,7 +231,7 @@ Defaults favor stability and coexistence with the official app:
 
 - Keep camera session warm: off.
 - Idle disconnect: 60 seconds.
-- Incoming audio: off; experimental AAC-LC when enabled.
+- Incoming audio: on; disable it for video-only operation when necessary.
 - Prefer direct P2P: observation only; not enforced.
 - Experimental local sensors: off.
 - Retain uploaded application package: off.
@@ -294,7 +294,7 @@ versions, and repeated stream recovery failure.
 | Runtime download fails | Confirm internet access and that a matching public GitHub release contains the AArch64 helper and checksums. |
 | Runtime never becomes ready | Open the associated Repair, enable **Run runtime probe**, and download redacted diagnostics after the bounded probe. |
 | Camera is temporarily unavailable | Wait for bounded recovery. If it persists, close the official app, leave keep-warm off, then use **Restart embedded stream**. |
-| Live view has no audio | Enable **Incoming audio** in integration options, reopen the stream, and inspect **Audio status** / **Audio codec**. `unavailable` means the camera returned an unsupported codec or the isolated audio path failed; video should continue. |
+| Live view has no audio | Confirm **Incoming audio** remains enabled in integration options, reopen the stream, and inspect **Audio status** / **Audio codec**. `unavailable` means the camera returned an unsupported codec or the isolated audio path failed; video should continue. |
 
 For support, download diagnostics from the Owlet Cam device and open an issue.
 Never attach an APK, `.owletcam` file, SDK key, account password, token, camera

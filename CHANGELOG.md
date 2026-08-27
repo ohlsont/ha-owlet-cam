@@ -14,9 +14,10 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ### Safety
 
-- Audio remains disabled by default. Unsupported codecs, malformed audio frames
-  and audio-pipe failures are isolated from the H.264 producer so video can
-  continue in a bounded video-only fallback mode.
+- Audio is enabled by default after successful real Owlet Cam 1 / Yellow
+  validation and can be disabled for video-only operation. Unsupported codecs,
+  malformed audio frames and audio-pipe failures are isolated from the H.264
+  producer so video can continue in a bounded video-only fallback mode.
 
 ### Validation status
 

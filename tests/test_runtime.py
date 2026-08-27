@@ -1086,6 +1086,29 @@ async def test_runtime_restore_waits_for_home_assistant_start(
     assert "Unable to remove unknown job listener" not in caplog.text
 
 
+async def test_runtime_defaults_audio_on_and_waits_for_started_event(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """The runtime default includes audio and startup waiting is deterministic."""
+    manager = OwletRuntimeManager(
+        hass,
+        root=tmp_path / "userfiles",
+        client=AsyncMock(spec=OwletCloudClient),
+        camera_identifier="OCD123456789",
+    )
+    assert manager._audio_enabled is True
+    assert manager.snapshot.audio_status == "idle"
+
+    hass.set_state(CoreState.starting)
+    wait_task = asyncio.create_task(manager._async_wait_until_home_assistant_started())
+    await asyncio.sleep(0)
+    assert not wait_task.done()
+
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await wait_task
+
+
 async def test_frame_probe_is_gated_until_libraries_pass(
     hass: HomeAssistant, tmp_path: Path
 ) -> None:
@@ -1535,6 +1558,7 @@ async def test_core_stream_probe_uses_bounded_secret_free_ffprobe(
         client=AsyncMock(spec=OwletCloudClient),
         camera_identifier="OCD123456789",
         runner=runner,
+        enable_audio=False,
     )
     manager._prepared = PreparedRuntime(
         manifest=RuntimeManifest(
