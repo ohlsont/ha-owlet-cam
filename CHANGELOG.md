@@ -9,6 +9,9 @@ All notable changes are documented here. Versions follow semantic versioning.
 - A credential-free desktop APKPure preparation path. It requests only the
   ARM64 Dream bundle through apkeep and produces the same compact private
   `.owletcam` package without requiring Android, Google, or Owlet credentials.
+- Embedded experimental mode is now presented first and selected by default;
+  external bridge mode remains supported as the separate-host compatibility
+  fallback.
 - Optional incoming AAC-LC audio for embedded live streams. The isolated native
   helper drains ThroughTek's audio FIFO into a separate inherited pipe, and the
   integration adds 8 kHz mono AAC to the loopback MPEG-TS without transcoding.

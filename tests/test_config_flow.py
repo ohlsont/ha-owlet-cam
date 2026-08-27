@@ -131,7 +131,7 @@ def _external_entry() -> MockConfigEntry:
 
 
 async def test_ordinary_flow_hides_development_mode(hass: HomeAssistant) -> None:
-    """The ordinary selector exposes only external and embedded modes."""
+    """The ordinary selector defaults to embedded and hides development mode."""
     with patch.dict("os.environ", {}, clear=True):
         result = await hass.config_entries.flow.async_init(
             DOMAIN,
@@ -143,6 +143,7 @@ async def test_ordinary_flow_hides_development_mode(hass: HomeAssistant) -> None
     mode_validator = next(iter(result["data_schema"].schema.values()))
     assert mode_validator(MODE_EXTERNAL) == MODE_EXTERNAL
     assert mode_validator(MODE_EMBEDDED) == MODE_EMBEDDED
+    assert result["data_schema"]({})[CONF_MODE] == MODE_EMBEDDED
 
 
 def _bridge_camera(name: str = "nursery") -> BridgeCamera:

@@ -27,8 +27,8 @@ ThroughTek.
 - [Capabilities](#what-works)
 - [Requirements and tested support](#requirements-and-support)
 - [Install with HACS](#installation-with-hacs)
-- [External bridge setup](#set-up-external-bridge-mode)
 - [Embedded setup](#set-up-embedded-experimental-mode)
+- [External bridge fallback](#set-up-external-bridge-mode)
 - [Entities](#home-assistant-entities)
 - [Options](#options-and-stream-behavior)
 - [Privacy and security](#privacy-and-security)
@@ -37,19 +37,19 @@ ThroughTek.
 
 ## What works
 
-| Capability | External bridge | Embedded experimental |
+| Capability | Embedded experimental | External bridge fallback |
 |---|---|---|
 | Native Home Assistant camera | Yes | Yes |
-| Live video | Bridge-provided RTSP | H.264 through a loopback-only MPEG-TS source |
-| Incoming audio | Bridge-provided | Experimental AAC-LC; enabled by default |
-| Still images | Bridge snapshot or stream | Yes |
-| `camera.snapshot` | When the source supports it | Tested on Yellow |
-| `camera.record` | When the source supports it | Tested on Yellow |
-| Temperature, humidity, sound, light and Wi-Fi sensors | When exposed by the bridge | Not yet supported |
-| Owlet cloud login | Not required | Required |
-| Private desktop-prepared `.owletcam` package | Not required | Required once during setup |
-| Architecture | Any Home Assistant architecture supported by the bridge client | AArch64 only |
-| Validation status | Automated fake-bridge coverage; real bridge gate pending | Bounded real Owlet Cam 1 validation on Yellow |
+| Live video | H.264 through a loopback-only MPEG-TS source | Bridge-provided RTSP |
+| Incoming audio | Experimental AAC-LC; enabled by default | Bridge-provided |
+| Still images | Yes | Bridge snapshot or stream |
+| `camera.snapshot` | Tested on Yellow | When the source supports it |
+| `camera.record` | Tested on Yellow | When the source supports it |
+| Temperature, humidity, sound, light and Wi-Fi sensors | Not yet supported | When exposed by the bridge |
+| Owlet cloud login | Required | Not required |
+| Private desktop-prepared `.owletcam` package | Required once during setup | Not required |
+| Architecture | AArch64 only | Any Home Assistant architecture supported by the bridge client |
+| Validation status | Bounded real Owlet Cam 1 validation on Yellow | Automated fake-bridge coverage; real bridge gate pending |
 
 Embedded incoming audio is experimental in 0.8.0 and enabled by default. Its
 separate-pipe and AAC/MPEG-TS path has automated, synthetic, and
@@ -60,28 +60,31 @@ supported.
 
 ## Choose a connection mode
 
-### External bridge
-
-Use this mode when you already run a compatible
-[`btoth525/Owlet-To-Rtsp`](https://github.com/btoth525/Owlet-To-Rtsp) bridge.
-Home Assistant talks to the bridge's HTTP API and uses its RTSP stream. MQTT and
-a separate Generic Camera configuration are not required.
-
-This mode is architecture-independent and remains the fallback for unsupported
-embedded installations. The adapter has comprehensive automated coverage, but
-its real-bridge acceptance gate has not yet been performed by this project.
-
 ### Embedded experimental
 
-Use this mode to run the camera protocol helper as an isolated child process
-inside Home Assistant Core. Native Owlet/ThroughTek libraries are never loaded
-into Home Assistant's Python process, and all internal media listeners bind to
+This is the primary setup path. It runs the camera protocol helper as an
+isolated child process inside Home Assistant Core, without a bridge computer or
+separate service. Native Owlet/ThroughTek libraries are never loaded into Home
+Assistant's Python process, and all internal media listeners bind to
 `127.0.0.1`.
 
 Embedded mode currently targets Home Assistant Yellow / AArch64. It requires a
 compact private `.owletcam` package prepared from an Owlet application that you
 legitimately obtained. The project does not distribute an APK, proprietary
 library, SDK licence key, or camera credential.
+
+### External bridge fallback
+
+Use this secondary mode only when you already run a compatible
+[`btoth525/Owlet-To-Rtsp`](https://github.com/btoth525/Owlet-To-Rtsp) bridge or
+the embedded runtime does not support your Home Assistant architecture or
+camera. Home Assistant talks to the bridge's HTTP API and uses its RTSP stream.
+MQTT and a separate Generic Camera configuration are not required.
+
+This mode requires a separate always-on bridge host. It remains supported as an
+architecture-independent compatibility fallback. The adapter has comprehensive
+automated coverage, but its real-bridge acceptance gate has not yet been
+performed by this project.
 
 ## Requirements and support
 
@@ -113,21 +116,6 @@ has not yet been claimed as tested.
 
 HACS preserves the integration's private `userfiles` directory across updates.
 Never copy that directory into an issue or backup intended for sharing.
-
-## Set up external bridge mode
-
-Before setup, confirm that the bridge itself can receive video and that Home
-Assistant can reach its HTTP(S) API.
-
-1. Add the **Owlet Cam** integration.
-2. Choose **External bridge**.
-3. Enter the bridge base URL.
-4. Optionally enter API credentials, an explicit RTSP source, or disable TLS
-   verification for a trusted local endpoint.
-5. If the bridge returns multiple cameras, select the camera to add.
-
-Create another config entry for each additional bridge camera. The integration
-rejects duplicate camera entries.
 
 ## Set up embedded experimental mode
 
@@ -234,6 +222,22 @@ After the first successful explicit probe, future reloads and restarts rerun
 the runtime safety gates automatically. The uploaded `.owletcam` package is
 deleted after extraction by default, while the extracted libraries and SDK key
 remain private so the camera can recover after a restart.
+
+## Set up external bridge mode
+
+This fallback requires an existing bridge host. Before setup, confirm that the
+bridge itself can receive video and that Home Assistant can reach its HTTP(S)
+API.
+
+1. Add the **Owlet Cam** integration.
+2. Choose **External bridge**.
+3. Enter the bridge base URL.
+4. Optionally enter API credentials, an explicit RTSP source, or disable TLS
+   verification for a trusted local endpoint.
+5. If the bridge returns multiple cameras, select the camera to add.
+
+Create another config entry for each additional bridge camera. The integration
+rejects duplicate camera entries.
 
 ## Home Assistant entities
 

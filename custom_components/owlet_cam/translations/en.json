@@ -32,14 +32,14 @@
     "step": {
       "user": {
         "title": "Choose a connection mode",
-        "description": "External bridge mode remains the production fallback. Embedded mode currently validates Owlet cloud access and camera credentials only.",
+        "description": "Embedded experimental mode runs directly on supported AArch64 Home Assistant systems and is the normal setup choice. External bridge mode requires a separately running bridge and remains available as a compatibility fallback.",
         "data": {
           "mode": "Connection mode"
         }
       },
       "embedded": {
-        "title": "Embedded experimental cloud validation",
-        "description": "This validates Owlet authentication and camera KMS metadata. Native streaming is not started.",
+        "title": "Embedded experimental",
+        "description": "Connect your Owlet account and camera directly to Home Assistant. Native streaming starts only after setup and explicit runtime validation.",
         "data": {
           "camera_dsn": "Camera serial / identifier",
           "camera_name": "Camera name",
@@ -59,7 +59,7 @@
           "runtime_package": "Owlet runtime package"
         },
         "data_description": {
-          "runtime_package": "Create this on a computer with owlet-cam-prepare.pyz using an existing archive, adb, or apkeep. Only .owletcam packages are accepted here."
+          "runtime_package": "Create this on a computer with owlet-cam-prepare.pyz. The recommended credential-free APKPure path needs no Android device; ADB, Google Play, and existing archives remain alternatives. Only .owletcam packages are accepted here."
         }
       },
       "external": {

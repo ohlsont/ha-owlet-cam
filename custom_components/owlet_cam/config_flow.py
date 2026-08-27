@@ -126,13 +126,13 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
                 return await self.async_step_external()
             return await self.async_step_embedded()
 
-        modes = [MODE_EXTERNAL, MODE_EMBEDDED]
+        modes = [MODE_EMBEDDED, MODE_EXTERNAL]
         if os.environ.get(DEV_MODE_ENV) == "1":
             modes.append(MODE_DEVELOPMENT)
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
-                {vol.Required(CONF_MODE, default=MODE_EXTERNAL): _select(modes, "mode")}
+                {vol.Required(CONF_MODE, default=MODE_EMBEDDED): _select(modes, "mode")}
             ),
         )
 

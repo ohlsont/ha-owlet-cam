@@ -22,6 +22,9 @@ or real-system evidence.
   apkeep's APKPure backend for `com.owletcare.sleep` with explicit
   `arch=arm64-v8a`. It passes no email, password, account token, or Owlet
   credential and supports no legacy-package override.
+- The normal Home Assistant connection selector now lists and defaults to
+  embedded experimental mode. External bridge remains selectable as the
+  separately hosted compatibility fallback; development mode remains hidden.
 - The path compares the complete five-library name/SHA-256 set before writing a
   `.owletcam` package. The trusted set was previously observed independently in
   a validly signed APKPure Dream 3.36.0 bundle and an official Google Play Dream
