@@ -33,9 +33,29 @@ or real-system evidence.
   the Home Assistant stable/beta test matrix, Hassfest and the full quality
   workflow. The older 0.9.1 release was marked prerelease first.
 - Public workflow run `33170068251` then passed HACS Action with category
-  `integration`, Hassfest and every quality check. This is evidence of public
-  HACS repository acceptance, not a claim that a fresh end-to-end HACS install
-  was performed on Yellow. That real-system installation remains unperformed.
+  `integration`, Hassfest and every quality check.
+- HACS 2.0.5 on AArch64 Home Assistant Yellow then added repository
+  `ohlsont/ha-owlet-cam` as an integration, discovered `v0.9.2`, downloaded it
+  and reported installed/available versions both `v0.9.2` with no pending
+  update. Core configuration was valid before restart. After restart, the
+  existing config entry loaded and diagnostics reported integration/helper
+  `0.9.2`, runtime `ready`, five compatible AArch64 libraries, SDK-key presence,
+  retained proprietary runtime material, cloud/KMS availability, no safe error
+  and redacted account/camera identifiers.
+- A post-HACS real snapshot returned a current room image. The bounded Core
+  stream probe then reported H.264 Baseline 1920×1080 at 15 FPS, 815.4 kbit/s,
+  110 decoded video frames, AAC-LC 8 kHz mono and 54 decoded audio frames. The
+  single producer stopped at zero consumers with zero reconnects; helper
+  accounting ended started 2/reaped 2/all reaped, zero forced kills and zero
+  active Repairs. Current room telemetry during that session was sound level
+  `32 dB`, illuminance `17 lx` and Wi-Fi `-48 dBm`; temperature and humidity
+  remained unavailable.
+- The public `v0.9.2` HACS archive, AArch64 helper and desktop preparer were also
+  downloaded without GitHub authentication and matched published SHA-256 values
+  `4063bc9f…4147f`, `1f2c0c17…96afb` and `cce9c0a9…c7de0b` respectively. This
+  completes the HACS-managed installation/update gate on the existing tested
+  Yellow. A clean first-time configuration on an independent installation and
+  multiple-user testing remain unperformed.
 
 ## Experimental embedded room-sensor validation — 2026-08-28
 

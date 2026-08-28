@@ -28,6 +28,11 @@ All notable changes are documented here. Versions follow semantic versioning.
   library, credential file, account credential, token or private key was found.
 - The public-repository HACS Action, Hassfest and quality workflow passed before
   the 0.9.2 tag was created.
+- After publication, HACS 2.0.5 added the public repository and installed
+  0.9.2 on AArch64 Home Assistant Yellow. Core restarted with the existing
+  private runtime material preserved; the entry loaded, exact helper 0.9.2
+  reached `ready`, a real snapshot succeeded and a bounded H.264/AAC probe
+  passed with clean child-process reaping and zero active Repairs.
 
 ## [0.9.1] - 2026-08-27
 

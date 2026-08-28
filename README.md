@@ -108,9 +108,12 @@ Owlet Cam is distributed as a public HACS custom repository. It is not yet part
 of the HACS default repository list, so add it once using the repository URL
 below.
 
-The public repository passes HACS Action validation. A fresh end-to-end HACS
-installation remains requested from early testers and is not represented as
-completed real-system evidence.
+The public repository passes HACS Action validation. Release `v0.9.2` also
+completed a HACS-managed install/update on Home Assistant Yellow: HACS added the
+custom repository, downloaded the release, preserved the existing private
+`userfiles`, restarted Core and restored the existing camera entry. A clean
+first-time setup on another household's installation is still requested from
+early testers.
 
 1. Install and configure [HACS](https://www.hacs.xyz/docs/use/).
 2. Open HACS, select the three-dot menu, and choose **Custom repositories**.
