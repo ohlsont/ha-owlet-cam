@@ -2,6 +2,19 @@
 
 All notable changes are documented here. Versions follow semantic versioning.
 
+## Unreleased
+
+### Removed
+
+- The Milestone 0 `OWLET_CAM_DEV_MODE` config-flow switch, development config
+  entry, generic lifecycle-only status entity and their translations. Release
+  builds now expose only embedded and external-bridge configuration modes.
+
+### Validation status
+
+- The complete 292-test suite passes at 85.16% branch-aware coverage; Ruff,
+  mypy, release metadata validation and the repository secret scan pass.
+
 ## [0.9.1] - 2026-08-27
 
 ### Added

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from hashlib import sha256
 from pathlib import Path
@@ -73,9 +72,7 @@ from .const import (
     DEFAULT_STREAM_QUALITY,
     DEFAULT_UPDATE_INTERVAL,
     DEFAULT_VERIFY_TLS,
-    DEV_MODE_ENV,
     DOMAIN,
-    MODE_DEVELOPMENT,
     MODE_EMBEDDED,
     MODE_EXTERNAL,
     REGION_EUROPE,
@@ -113,26 +110,20 @@ class OwletCamConfigFlow(  # type: ignore[call-arg]
         """Start with a connection-mode selector."""
         if user_input is not None:
             mode = user_input[CONF_MODE]
-            if mode == MODE_DEVELOPMENT:
-                if os.environ.get(DEV_MODE_ENV) != "1":
-                    return self.async_abort(reason="development_disabled")
-                await self.async_set_unique_id(MODE_DEVELOPMENT)
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title="Owlet Cam Development",
-                    data={CONF_MODE: MODE_DEVELOPMENT},
-                )
             if mode == MODE_EXTERNAL:
                 return await self.async_step_external()
-            return await self.async_step_embedded()
+            if mode == MODE_EMBEDDED:
+                return await self.async_step_embedded()
+            return self.async_abort(reason="unsupported_mode")
 
-        modes = [MODE_EMBEDDED, MODE_EXTERNAL]
-        if os.environ.get(DEV_MODE_ENV) == "1":
-            modes.append(MODE_DEVELOPMENT)
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
-                {vol.Required(CONF_MODE, default=MODE_EMBEDDED): _select(modes, "mode")}
+                {
+                    vol.Required(CONF_MODE, default=MODE_EMBEDDED): _select(
+                        (MODE_EMBEDDED, MODE_EXTERNAL), "mode"
+                    )
+                }
             ),
         )
 

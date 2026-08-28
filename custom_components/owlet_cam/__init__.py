@@ -143,7 +143,7 @@ async def async_setup_entry(
             name=entry.data[CONF_CAMERA_NAME],
         )
     else:
-        coordinator = OwletCamCoordinator(hass)
+        raise ValueError("Unsupported Owlet Cam configuration mode")
 
     entry.runtime_data = OwletCamRuntimeData(
         client=client,

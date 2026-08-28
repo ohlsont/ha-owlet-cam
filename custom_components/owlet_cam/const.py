@@ -32,8 +32,6 @@ CONF_BRIDGE_TIMEOUT: Final = "bridge_request_timeout"
 
 MODE_EXTERNAL: Final = "external_bridge"
 MODE_EMBEDDED: Final = "embedded"
-MODE_DEVELOPMENT: Final = "development"
-DEV_MODE_ENV: Final = "OWLET_CAM_DEV_MODE"
 
 REGION_EUROPE: Final = "europe"
 REGION_WORLD: Final = "world"

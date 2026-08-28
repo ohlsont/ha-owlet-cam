@@ -57,9 +57,7 @@ from custom_components.owlet_cam.const import (
     CONF_STREAM_QUALITY,
     CONF_UPDATE_INTERVAL,
     CONF_VERIFY_TLS,
-    DEV_MODE_ENV,
     DOMAIN,
-    MODE_DEVELOPMENT,
     MODE_EMBEDDED,
     MODE_EXTERNAL,
     REGION_EUROPE,
@@ -130,13 +128,12 @@ def _external_entry() -> MockConfigEntry:
     )
 
 
-async def test_ordinary_flow_hides_development_mode(hass: HomeAssistant) -> None:
-    """The ordinary selector defaults to embedded and hides development mode."""
-    with patch.dict("os.environ", {}, clear=True):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_USER},
-        )
+async def test_ordinary_flow_offers_only_supported_modes(hass: HomeAssistant) -> None:
+    """The selector defaults to embedded and offers only production modes."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
 
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
@@ -144,6 +141,18 @@ async def test_ordinary_flow_hides_development_mode(hass: HomeAssistant) -> None
     assert mode_validator(MODE_EXTERNAL) == MODE_EXTERNAL
     assert mode_validator(MODE_EMBEDDED) == MODE_EMBEDDED
     assert result["data_schema"]({})[CONF_MODE] == MODE_EMBEDDED
+
+
+async def test_removed_development_input_is_rejected(hass: HomeAssistant) -> None:
+    """A forged request cannot restore the removed development entry type."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+        data={CONF_MODE: "development"},
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "unsupported_mode"
 
 
 def _bridge_camera(name: str = "nursery") -> BridgeCamera:
@@ -313,39 +322,6 @@ async def test_external_reauth_and_reconfigure_reload_once_each(
     assert result["reason"] == "reconfigure_successful"
     assert entry.data[CONF_BRIDGE_URL] == f"{BRIDGE_URL}/new"
     reload_entry.assert_called_once_with(entry.entry_id)
-
-
-async def test_development_flow_create_and_reject_duplicate(
-    hass: HomeAssistant,
-) -> None:
-    """The explicit development switch creates exactly one config entry."""
-    with patch.dict("os.environ", {DEV_MODE_ENV: "1"}, clear=True):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_USER},
-            data={CONF_MODE: MODE_DEVELOPMENT},
-        )
-        assert result["type"] is FlowResultType.CREATE_ENTRY
-
-        duplicate = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_USER},
-            data={CONF_MODE: MODE_DEVELOPMENT},
-        )
-
-    assert duplicate["type"] is FlowResultType.ABORT
-    assert duplicate["reason"] == "already_configured"
-
-
-async def test_development_input_rejected_without_switch(hass: HomeAssistant) -> None:
-    with patch.dict("os.environ", {}, clear=True):
-        result = await hass.config_entries.flow.async_init(
-            DOMAIN,
-            context={"source": config_entries.SOURCE_USER},
-            data={CONF_MODE: MODE_DEVELOPMENT},
-        )
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "development_disabled"
 
 
 async def test_embedded_success_normalizes_and_creates(hass: HomeAssistant) -> None:

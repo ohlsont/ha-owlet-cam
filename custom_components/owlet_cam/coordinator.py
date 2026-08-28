@@ -2,7 +2,7 @@
 
 import logging
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntryAuthFailed
 from homeassistant.core import HomeAssistant
@@ -37,7 +37,11 @@ class OwletCamCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         bridge_camera_id: str | None = None,
         update_interval: timedelta = DEFAULT_COORDINATOR_INTERVAL,
     ) -> None:
-        """Initialize a development or cloud coordinator."""
+        """Initialize a cloud or bridge coordinator."""
+        cloud_configured = client is not None and camera_dsn is not None
+        bridge_configured = bridge_client is not None and bridge_camera_id is not None
+        if cloud_configured == bridge_configured:
+            raise ValueError("Configure exactly one Owlet coordinator transport")
         self._client = client
         self._camera_dsn = camera_dsn
         self._bridge_client = bridge_client
@@ -46,26 +50,17 @@ class OwletCamCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass,
             logger=_LOGGER,
             name=DOMAIN,
-            update_interval=(
-                update_interval
-                if client is not None or bridge_client is not None
-                else None
-            ),
+            update_interval=update_interval,
             always_update=False,
         )
-        if client is None and bridge_client is None:
-            self.async_set_updated_data({"status": STATUS_READY})
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Refresh safe cloud and KMS status data."""
-        if self._bridge_client is not None and self._bridge_camera_id is not None:
+        if self._bridge_client is not None:
+            bridge_camera_id = cast(str, self._bridge_camera_id)
             try:
-                status = await self._bridge_client.async_get_status(
-                    self._bridge_camera_id
-                )
-                sensors = await self._bridge_client.async_get_sensors(
-                    self._bridge_camera_id
-                )
+                status = await self._bridge_client.async_get_status(bridge_camera_id)
+                sensors = await self._bridge_client.async_get_sensors(bridge_camera_id)
             except OwletBridgeAuthenticationError as err:
                 raise ConfigEntryAuthFailed(
                     "Owlet bridge authentication failed"
@@ -88,12 +83,10 @@ class OwletCamCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "illuminance": sensors.illuminance,
                 "wifi_signal": sensors.wifi_signal,
             }
-        if self._client is None or self._camera_dsn is None:
-            return {"status": STATUS_READY}
+        client = cast(OwletCloudClient, self._client)
+        camera_dsn = cast(str, self._camera_dsn)
         try:
-            metadata = await self._client.async_validate_configured_camera(
-                self._camera_dsn
-            )
+            metadata = await client.async_validate_configured_camera(camera_dsn)
         except OwletAuthenticationError as err:
             raise ConfigEntryAuthFailed("Owlet account authentication failed") from err
         except OwletRateLimitError as err:

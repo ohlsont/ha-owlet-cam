@@ -2,10 +2,10 @@
   "config": {
     "abort": {
       "already_configured": "This Owlet camera is already configured.",
-      "development_disabled": "Development setup is disabled. Set OWLET_CAM_DEV_MODE=1 only in a development environment.",
       "external_not_available": "External bridge mode arrives in version 0.3.0. Embedded cloud validation is available now.",
       "reauth_successful": "Owlet account authentication was updated successfully.",
       "reconfigure_successful": "Owlet camera configuration was updated successfully.",
+      "unsupported_mode": "This Owlet Cam setup mode is not supported.",
       "wrong_camera": "The camera DSN does not match this configuration entry."
     },
     "error": {
@@ -201,7 +201,6 @@
   "selector": {
     "mode": {
       "options": {
-        "development": "Development lifecycle test",
         "embedded": "Embedded experimental",
         "external_bridge": "External bridge"
       }
@@ -288,12 +287,6 @@
       },
       "illuminance": {
         "name": "Illuminance"
-      },
-      "integration_status": {
-        "name": "Integration status",
-        "state": {
-          "ready": "Ready"
-        }
       },
       "last_frame_probe": {
         "name": "Last frame probe"

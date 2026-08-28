@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.owlet_cam import CONFIG_SCHEMA
+from custom_components.owlet_cam import CONFIG_SCHEMA, async_setup_entry
 from custom_components.owlet_cam.api.exceptions import (
     OwletAuthenticationError,
     OwletConnectionError,
@@ -34,13 +34,12 @@ from custom_components.owlet_cam.const import (
     CONF_REGION,
     CONF_VERIFY_TLS,
     DOMAIN,
-    MODE_DEVELOPMENT,
     MODE_EMBEDDED,
     MODE_EXTERNAL,
     REGION_EUROPE,
 )
+from custom_components.owlet_cam.coordinator import OwletCamCoordinator
 
-ENTITY_ID = "sensor.owlet_cam_integration_status"
 DSN = "OCD123456789"
 
 
@@ -53,13 +52,24 @@ def test_yaml_configuration_is_reported(caplog: pytest.LogCaptureFixture) -> Non
     assert "does not support YAML setup" in caplog.text
 
 
-def _entry() -> MockConfigEntry:
-    return MockConfigEntry(
+def test_coordinator_rejects_missing_transport(hass: HomeAssistant) -> None:
+    """The removed development transport cannot be recreated internally."""
+    with pytest.raises(ValueError, match="exactly one"):
+        OwletCamCoordinator(hass)
+
+
+async def test_setup_rejects_removed_configuration_mode(
+    hass: HomeAssistant,
+) -> None:
+    """A stale or forged development entry fails closed."""
+    entry = MockConfigEntry(
         domain=DOMAIN,
-        title="Owlet Cam Development",
-        data={CONF_MODE: MODE_DEVELOPMENT},
-        unique_id=MODE_DEVELOPMENT,
+        title="Removed mode",
+        data={CONF_MODE: "development"},
+        unique_id="removed-mode",
     )
+    with pytest.raises(ValueError, match="Unsupported Owlet Cam"):
+        await async_setup_entry(hass, entry)
 
 
 def _embedded_entry() -> MockConfigEntry:
@@ -107,41 +117,54 @@ def _metadata() -> OwletCloudMetadata:
     )
 
 
+def _configure_external_client(client_class: object) -> None:
+    """Prepare cached bridge responses for lifecycle-only setup tests."""
+    client = client_class.return_value
+    client.async_get_status = AsyncMock(
+        return_value=CameraStatus(online=True, stream_healthy=True)
+    )
+    client.async_get_sensors = AsyncMock(return_value=CameraSensors())
+
+
 async def test_setup_unload_and_reload(hass: HomeAssistant) -> None:
-    """Setup, unload, and reload leave exactly one entity."""
-    entry = _entry()
+    """Setup, unload, and reload leave one copy of every bridge entity."""
+    entry = _external_entry()
     entry.add_to_hass(hass)
 
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.LOADED
-    assert hass.states.get(ENTITY_ID) is not None
-    assert len(hass.states.async_entity_ids("sensor")) == 1
+    with patch("custom_components.owlet_cam.OwletHttpBridgeClient") as client_class:
+        _configure_external_client(client_class)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.LOADED
+        assert hass.states.get("camera.nursery") is not None
+        entity_ids = set(hass.states.async_entity_ids())
 
-    assert await hass.config_entries.async_reload(entry.entry_id)
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.LOADED
-    assert hass.states.get(ENTITY_ID) is not None
-    assert len(hass.states.async_entity_ids("sensor")) == 1
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.LOADED
+        assert set(hass.states.async_entity_ids()) == entity_ids
 
-    assert await hass.config_entries.async_unload(entry.entry_id)
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.NOT_LOADED
-    assert hass.states.get(ENTITY_ID) is None
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.NOT_LOADED
+        assert all(hass.states.get(entity_id) is None for entity_id in entity_ids)
 
 
 async def test_remove_entry_cleanly(hass: HomeAssistant) -> None:
     """Removing an entry unloads its entity and leaves no integration tasks."""
-    entry = _entry()
+    entry = _external_entry()
     entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    with patch("custom_components.owlet_cam.OwletHttpBridgeClient") as client_class:
+        _configure_external_client(client_class)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        entity_ids = set(hass.states.async_entity_ids())
 
-    await hass.config_entries.async_remove(entry.entry_id)
-    await hass.async_block_till_done()
+        await hass.config_entries.async_remove(entry.entry_id)
+        await hass.async_block_till_done()
 
     assert hass.config_entries.async_get_entry(entry.entry_id) is None
-    assert hass.states.get(ENTITY_ID) is None
+    assert all(hass.states.get(entity_id) is None for entity_id in entity_ids)
     assert not hass.services.async_services().get(DOMAIN)
 
 
