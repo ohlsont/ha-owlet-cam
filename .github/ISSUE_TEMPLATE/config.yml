@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup questions and troubleshooting
+    url: https://github.com/ohlsont/ha-owlet-cam/discussions/categories/q-a
+    about: Ask for setup help without opening a defect report.
+  - name: Report a security vulnerability privately
+    url: https://github.com/ohlsont/ha-owlet-cam/security/advisories/new
+    about: Never disclose credentials, proprietary files, or private video publicly.
+  - name: Beta testing guide
+    url: https://github.com/ohlsont/ha-owlet-cam/blob/main/docs/BETA_TESTING.md
+    about: Follow the safe checklist before submitting a beta report.

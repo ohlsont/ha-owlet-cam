@@ -1,0 +1,98 @@
+name: Bug report
+description: Report a reproducible Owlet Cam integration problem
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping test Owlet Cam.
+
+        **Do not attach an APK/APKM/XAPK, `.owletcam` package, native library, SDK key, account password, token, camera UID/AuthKey/AV password, camera serial, unredacted local path, private video, or camera image.** Inspect Home Assistant diagnostics before attaching them even though the integration is designed and tested to redact secrets.
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Runtime mode
+      options:
+        - Embedded experimental
+        - External bridge
+    validations:
+      required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: Owlet Cam version
+      description: Shown by HACS and in downloaded diagnostics.
+      placeholder: 0.9.2
+    validations:
+      required: true
+  - type: input
+    id: home_assistant
+    attributes:
+      label: Home Assistant installation
+      description: Core, OS, HACS, and architecture versions. Do not include an external URL.
+      placeholder: Core 2026.8.3, HAOS 18.2, HACS 2.0.5, aarch64
+    validations:
+      required: true
+  - type: input
+    id: camera
+    attributes:
+      label: Camera model and firmware
+      description: Model and firmware only. Do not enter a serial, DSN, UID, or MAC address.
+      placeholder: Owlet Cam 1, firmware unknown
+    validations:
+      required: true
+  - type: dropdown
+    id: region
+    attributes:
+      label: Account region
+      options:
+        - Europe / EMEA
+        - World / US
+        - Not applicable (external bridge)
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the observable problem without including private room details.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest repeatable sequence.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics and safe logs
+      description: Attach Home Assistant diagnostics after inspecting them. Paste only relevant sanitized log lines; remove URLs, local paths, identifiers, tokens, and media.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I am testing the latest published release or have explained why I cannot update.
+          required: true
+        - label: I searched existing Issues and Discussions for the same problem.
+          required: true
+        - label: I inspected every attachment and removed proprietary files, credentials, identifiers, local paths, and private media.
+          required: true
+        - label: I understand that public issues are permanently visible and are not suitable for security vulnerabilities.
+          required: true

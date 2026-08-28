@@ -1,0 +1,78 @@
+name: Beta compatibility report
+description: Record a safe first-time installation or camera compatibility result
+title: "[Beta]: "
+labels:
+  - beta-test
+  - camera-compatibility
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use the [beta testing checklist](https://github.com/ohlsont/ha-owlet-cam/blob/main/docs/BETA_TESTING.md). Report failures honestly; partial results are useful.
+
+        Never attach proprietary application/runtime files, credentials, identifiers, private camera images, or video.
+  - type: dropdown
+    id: result
+    attributes:
+      label: Overall result
+      options:
+        - Completed successfully
+        - Partially completed
+        - Blocked during setup
+        - Existing installation upgrade only
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Home Assistant environment
+      description: Core, OS/container type, HACS, and architecture only.
+      placeholder: Core 2026.8.3, HAOS 18.2, HACS 2.0.5, aarch64
+    validations:
+      required: true
+  - type: input
+    id: camera
+    attributes:
+      label: Camera model and firmware
+      description: Do not include a camera serial, DSN, UID, or MAC address.
+      placeholder: Owlet Cam 1, firmware unknown
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Runtime mode
+      options:
+        - Embedded experimental
+        - External bridge
+    validations:
+      required: true
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Checklist results
+      description: Mark each attempted test pass, fail, or unperformed and include only non-secret statistics.
+      placeholder: |
+        - HACS installation: pass
+        - Configuration flow: pass
+        - Runtime probe: pass
+        - Snapshot: pass
+        - Live video: pass
+        - Incoming audio: unperformed
+        - Reload/restart recovery: pass
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Safe observations
+      description: Include redacted error codes, codec/resolution/FPS, and workarounds. Do not describe private room contents.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Publication confirmation
+      options:
+        - label: I inspected all text and attachments and removed credentials, identifiers, proprietary material, local paths, and private media.
+          required: true
+        - label: I have not marked an unperformed test as passed.
+          required: true

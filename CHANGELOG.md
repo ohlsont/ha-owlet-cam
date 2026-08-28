@@ -4,6 +4,12 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ## Unreleased
 
+### Added
+
+- Public-beta support infrastructure: structured safe-reporting issue forms,
+  Discussions routing, private vulnerability reporting, compatibility checklist,
+  contribution rules, pull-request safety checks and focused triage labels.
+
 ## [0.9.2] - 2026-08-28
 
 ### Changed

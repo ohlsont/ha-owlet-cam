@@ -1,0 +1,52 @@
+name: Feature request
+description: Propose a focused integration improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the Home Assistant use case, not proprietary implementation details. Do not attach application files, native libraries, captured credentials, decompiled code, SDK keys, or private media.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What user-visible limitation are you encountering?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain how the integration should behave in Home Assistant.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Relevant area
+      options:
+        - Embedded runtime
+        - External bridge
+        - Video or snapshots
+        - Audio
+        - Sensors
+        - Authentication or setup
+        - Diagnostics or repairs
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Clean-room confirmation
+      options:
+        - label: This request contains no proprietary source, decompiled expression, credential, SDK key, application file, native library, or private media.
+          required: true

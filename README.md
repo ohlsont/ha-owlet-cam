@@ -35,6 +35,7 @@ ThroughTek.
 - [Options](#options-and-stream-behavior)
 - [Privacy and security](#privacy-and-security)
 - [Troubleshooting](#repairs-and-troubleshooting)
+- [Beta testing and support](#beta-testing-and-support)
 - [Known limitations](#known-limitations)
 
 ## What works
@@ -378,9 +379,20 @@ versions, and repeated stream recovery failure.
 | Camera is temporarily unavailable | Wait for bounded recovery. If it persists, close the official app, leave keep-warm off, then use **Restart embedded stream**. |
 | Live view has no audio | Confirm **Incoming audio** remains enabled in integration options, reopen the stream, and inspect **Audio status** / **Audio codec**. `unavailable` means the camera returned an unsupported codec or the isolated audio path failed; video should continue. |
 
-For support, download diagnostics from the Owlet Cam device and open an issue.
-Never attach an APK, `.owletcam` file, SDK key, account password, token, camera
-UID, AuthKey, or AV password.
+## Beta testing and support
+
+Follow the [safe beta checklist](docs/BETA_TESTING.md) and use the structured
+[issue forms](https://github.com/ohlsont/ha-owlet-cam/issues/new/choose) for
+reproducible bugs, feature requests, and compatibility reports. Ask setup
+questions in [GitHub Discussions](https://github.com/ohlsont/ha-owlet-cam/discussions/categories/q-a).
+See [SUPPORT.md](.github/SUPPORT.md) for routing and disclosure rules.
+
+Never attach an APK, `.owletcam` file, native library, SDK key, account
+password, token, camera identifier, AuthKey, AV password, private camera image,
+or video. Inspect downloaded diagnostics before attaching them. Report security
+or redaction failures through
+[private vulnerability reporting](https://github.com/ohlsont/ha-owlet-cam/security/advisories/new),
+not a public issue.
 
 ## Known limitations
 
@@ -417,6 +429,8 @@ Useful project documents:
 - [CHANGELOG.md](CHANGELOG.md) — user-visible changes and release status.
 - [TEST_REPORT.md](TEST_REPORT.md) — automated and real-system evidence.
 - [SECURITY.md](SECURITY.md) — threat model, storage, deletion, and reporting.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — clean-room, testing, and pull-request rules.
+- [docs/BETA_TESTING.md](docs/BETA_TESTING.md) — safe public-beta checklist.
 - [helper/README.md](helper/README.md) — open-source helper build design.
 
 Run the local quality suite with [uv](https://docs.astral.sh/uv/):

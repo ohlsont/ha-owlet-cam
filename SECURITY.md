@@ -73,7 +73,9 @@ password material and tokens remain memory-only and are never written to
 
 ## Reporting a vulnerability
 
-Use GitHub's private vulnerability-reporting/security-advisory flow. Do not
+Use
+[GitHub's private vulnerability-reporting/security-advisory flow](https://github.com/ohlsont/ha-owlet-cam/security/advisories/new).
+Do not
 include live credentials, tokens, APKs, SDK keys, camera UIDs, AuthKeys, AV
 passwords, or private video. Provide sanitized reproduction steps and the
 integration/Home Assistant versions. Public issues are appropriate only after
