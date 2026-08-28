@@ -26,6 +26,8 @@ All notable changes are documented here. Versions follow semantic versioning.
 - The complete Git history and the downloadable 0.9.1 release assets were
   audited before publication; no proprietary application package, user camera
   library, credential file, account credential, token or private key was found.
+- The public-repository HACS Action, Hassfest and quality workflow passed before
+  the 0.9.2 tag was created.
 
 ## [0.9.1] - 2026-08-27
 

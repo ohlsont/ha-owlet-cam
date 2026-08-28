@@ -108,6 +108,10 @@ Owlet Cam is distributed as a public HACS custom repository. It is not yet part
 of the HACS default repository list, so add it once using the repository URL
 below.
 
+The public repository passes HACS Action validation. A fresh end-to-end HACS
+installation remains requested from early testers and is not represented as
+completed real-system evidence.
+
 1. Install and configure [HACS](https://www.hacs.xyz/docs/use/).
 2. Open HACS, select the three-dot menu, and choose **Custom repositories**.
 3. Enter `https://github.com/ohlsont/ha-owlet-cam` and select

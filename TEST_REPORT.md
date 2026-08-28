@@ -18,6 +18,25 @@ or real-system evidence.
 
 | 7b — Experimental embedded room sensors | `b085440`, released by `8edff5e` | 0.9.1 private release | Core 2026.8.3 | HAOS 18.2 | macOS ARM64 host; reproducible Yellow AArch64 helper | Owlet Cam 1, user-reported | Not established | **Passed locally:** 292 tests at 85.22% branch-aware coverage; Ruff, mypy, freestanding helper compilation, reproducible AArch64 packaging and release-asset inspection passed | **Passed deployment and bounded-session safety; partial sensor coverage:** exact 0.9.1 integration/helper loaded, runtime reached `ready`, entities appeared, existing video/audio probe passed, zero active Repairs and zero current Owlet system-log entries | **Partially passed:** sound `0 dB`, illuminance `17 lx` and Wi-Fi `-49 dBm` were received from the real camera; temperature and humidity remained `unknown`, and the user confirmed Dream did not display either value during the same validation period. The sound value was not independently correlated and is recorded only as received | **Three fields populated; temperature/humidity are currently unavailable from the tested camera/firmware** | Release source SHA-256 `14d41605…015d`; proprietary-free helper SHA-256 `e0b58681…f955`. Same bounded session reported H.264 Baseline 1920×1080 at 15 FPS, 675.3 kbit/s and AAC (Kalay `0x88`). Option persisted through the official options flow. Userfiles were preserved; deployment staging and rollback copies were removed; temporary key-only SSH was fully closed | Correlation if Dream later displays temperature/humidity; longer sensor session; other camera models | Sensor values update only while an embedded session is active. The implementation rejects out-of-range telemetry instead of publishing guessed values; the tested Cam 1 currently exposes neither temperature nor humidity in Dream |
 
+## Public custom-repository validation — 2026-08-28
+
+- The full Git object history was scanned before the visibility change. No
+  proprietary APK/APKM/XAPK, user-supplied native library, `.env` file, Gmail
+  address, JWT, Google API key or private key was found. Identifier-pattern
+  hits were limited to deliberately synthetic test fixtures.
+- Existing `v0.9.1` assets were downloaded, their published SHA-256 checksums
+  verified and their member allowlists inspected before they became public.
+  The helper contains only the clean-room executables and the documented
+  open-source minimal Bionic runtime; it contains no Owlet/ThroughTek library,
+  application package, SDK key or camera/account credential.
+- Repository visibility changed to public only after the 0.9.2 candidate passed
+  the Home Assistant stable/beta test matrix, Hassfest and the full quality
+  workflow. The older 0.9.1 release was marked prerelease first.
+- Public workflow run `33170068251` then passed HACS Action with category
+  `integration`, Hassfest and every quality check. This is evidence of public
+  HACS repository acceptance, not a claim that a fresh end-to-end HACS install
+  was performed on Yellow. That real-system installation remains unperformed.
+
 ## Experimental embedded room-sensor validation — 2026-08-28
 
 - GitHub release `v0.9.1` passed its release workflow. The Yellow independently
