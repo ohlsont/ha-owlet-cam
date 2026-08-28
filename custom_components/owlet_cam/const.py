@@ -7,7 +7,7 @@ from homeassistant.const import CONF_PASSWORD as HA_CONF_PASSWORD
 from homeassistant.const import Platform
 
 DOMAIN: Final = "owlet_cam"
-INTEGRATION_VERSION: Final = "0.9.2"
+INTEGRATION_VERSION: Final = "0.9.3"
 EXPECTED_HELPER_VERSION: Final = INTEGRATION_VERSION
 PLATFORMS: Final = [
     Platform.SENSOR,

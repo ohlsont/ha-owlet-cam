@@ -3,6 +3,24 @@
 Evidence is recorded conservatively. “Passed” is used only with captured test
 or real-system evidence.
 
+## Public beta v0.9.3 release candidate — 2026-08-28
+
+- The complete 292-test suite passed locally at 85.14% branch-aware coverage.
+  Ruff format/check, mypy, release metadata validation, JSON validation, the
+  repository secret scan and a deterministic standalone-preparer build/help
+  check also passed.
+- The preceding support-infrastructure commit `42e7559` passed GitHub HACS
+  Action, Hassfest, quality and stable/beta test workflows. GitHub Discussions,
+  the Q&A category, structured issue forms and private vulnerability reporting
+  were independently verified reachable before the release version bump.
+- Version 0.9.3 changes distribution/support metadata and documentation only.
+  Integration and helper runtime behavior are unchanged from 0.9.2, whose HACS
+  installation, Yellow restart recovery and bounded real H.264/AAC camera probe
+  evidence remains recorded below.
+- A separate 0.9.3 Yellow deployment and an independent household's clean setup
+  are unperformed and are not claimed. The release is intentionally labelled a
+  public beta; it is not a stable 1.0 release or a HACS-defaults submission.
+
 | Milestone | Commit | Integration version | Home Assistant version | Home Assistant OS version | Architecture | Camera model | Camera firmware | Automated tests | Yellow test | Real camera test | Result | Evidence | Unperformed tests | Known issues |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0 — HACS scaffold and lifecycle | `67fae5f` | 0.1.0 | 2026.8.2 current; 2024.5.0 minimum at that milestone | HAOS 18.2 | AArch64 Home Assistant Yellow; private manual install | None | None | **Passed locally:** original 6-test lifecycle suite; later suites continue to cover lifecycle | **Partial:** manual setup, reload, unload, re-enable, restart, entity removal/restoration, and clean Owlet logs passed | Not applicable | **Lifecycle gate passed; HACS-installation gate deferred by user** | Local tests plus authenticated HA-MCP lifecycle evidence on 2026-08-22 | HACS custom-repository acceptance, HACS Action and Hassfest in GitHub context | Public repository intentionally deferred until core functionality works |

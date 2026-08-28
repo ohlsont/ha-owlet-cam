@@ -4,11 +4,20 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ## Unreleased
 
+## [0.9.3] - 2026-08-28
+
 ### Added
 
 - Public-beta support infrastructure: structured safe-reporting issue forms,
   Discussions routing, private vulnerability reporting, compatibility checklist,
   contribution rules, pull-request safety checks and focused triage labels.
+
+### Release status
+
+- Public-beta distribution and support release. Integration and helper runtime
+  behavior are unchanged from the real-camera-validated 0.9.2 release.
+- The complete 292-test suite passes at 85.14% branch-aware coverage; HACS
+  Action, Hassfest, Ruff, mypy, release validation and the secret scan pass.
 
 ## [0.9.2] - 2026-08-28
 
