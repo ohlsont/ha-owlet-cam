@@ -73,8 +73,8 @@ password material and tokens remain memory-only and are never written to
 
 ## Reporting a vulnerability
 
-Use the repository's private GitHub security advisory flow. Do not include live
-credentials, tokens, APKs, SDK keys, camera UIDs, AuthKeys, AV passwords, or
-private video. Provide sanitized reproduction steps and the integration/Home
-Assistant versions. Public issues are appropriate only after secrets and
-personally identifying data have been removed.
+Use GitHub's private vulnerability-reporting/security-advisory flow. Do not
+include live credentials, tokens, APKs, SDK keys, camera UIDs, AuthKeys, AV
+passwords, or private video. Provide sanitized reproduction steps and the
+integration/Home Assistant versions. Public issues are appropriate only after
+secrets and personally identifying data have been removed.

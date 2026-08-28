@@ -7,6 +7,7 @@
 [![Validate](https://github.com/ohlsont/ha-owlet-cam/actions/workflows/validate.yml/badge.svg)](https://github.com/ohlsont/ha-owlet-cam/actions/workflows/validate.yml)
 [![Tests](https://github.com/ohlsont/ha-owlet-cam/actions/workflows/tests.yml/badge.svg)](https://github.com/ohlsont/ha-owlet-cam/actions/workflows/tests.yml)
 [![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://www.hacs.xyz/)
+[![GitHub release](https://img.shields.io/github/v/release/ohlsont/ha-owlet-cam)](https://github.com/ohlsont/ha-owlet-cam/releases)
 [![License](https://img.shields.io/github/license/ohlsont/ha-owlet-cam)](LICENSE)
 
 Bring an Owlet camera into Home Assistant as a native camera entity. View live
@@ -52,7 +53,7 @@ ThroughTek.
 | Architecture | AArch64 only | Any Home Assistant architecture supported by the bridge client |
 | Validation status | Bounded real Owlet Cam 1 validation on Yellow | Automated fake-bridge coverage; real bridge gate pending |
 
-Embedded incoming audio is experimental in 0.8.0 and enabled by default. Its
+Embedded incoming audio is experimental and enabled by default. Its
 separate-pipe and AAC/MPEG-TS path has automated, synthetic, and
 bounded real-camera Yellow FFprobe coverage. Owlet Cam 1 supplied AAC-LC in
 native ADTS framing at 8 kHz mono without audio or video transcoding. Audible
@@ -103,9 +104,9 @@ unsupported until they are recorded in [TEST_REPORT.md](TEST_REPORT.md).
 
 ## Installation with HACS
 
-The repository is still private while release hardening is completed. These
-steps apply after the first public release; a normal public HACS installation
-has not yet been claimed as tested.
+Owlet Cam is distributed as a public HACS custom repository. It is not yet part
+of the HACS default repository list, so add it once using the repository URL
+below.
 
 1. Install and configure [HACS](https://www.hacs.xyz/docs/use/).
 2. Open HACS, select the three-dot menu, and choose **Custom repositories**.
@@ -359,7 +360,7 @@ versions, and repeated stream recovery failure.
 | Symptom | What to check |
 |---|---|
 | Owlet Cam does not appear in Add integration | Restart Home Assistant after the HACS download and confirm the repository type is **Integration**. |
-| HACS cannot add the repository | The normal HACS path requires the public repository. This repository is private during pre-release development. |
+| HACS cannot add the repository | Confirm GitHub is reachable, use exactly `https://github.com/ohlsont/ha-owlet-cam`, and select the **Integration** category under HACS custom repositories. |
 | Camera serial is rejected | Use the app-visible value beginning with letters `OC`; do not type digit `0` as the first character. |
 | Authentication fails | Verify the same email, typed password, and region in Dream. Apple/Google sign-in alone may not provide a usable Owlet password. |
 | Runtime package is rejected | Regenerate it with the matching release's preparer. Do not rename an APK to `.owletcam`. |
@@ -376,8 +377,8 @@ UID, AuthKey, or AV password.
 
 ## Known limitations
 
-- The repository is private and has not completed a normal public HACS
-  installation or anonymous helper-release download.
+- The project is a pre-release HACS custom repository and has not been accepted
+  into the HACS default repository list.
 - Embedded mode is validated only on AArch64 Home Assistant Yellow with one
   user-reported Owlet Cam 1.
 - External bridge mode has automated compatibility tests but no completed real

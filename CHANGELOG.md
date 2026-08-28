@@ -4,6 +4,15 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ## Unreleased
 
+## [0.9.2] - 2026-08-28
+
+### Changed
+
+- Prepared the first public HACS custom-repository preview while retaining the
+  experimental labels and the exact evidence limits for embedded mode, audio,
+  room sensors and the external bridge.
+- Updated public installation, support and security-reporting documentation.
+
 ### Removed
 
 - The Milestone 0 `OWLET_CAM_DEV_MODE` config-flow switch, development config
@@ -12,8 +21,11 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 ### Validation status
 
-- The complete 292-test suite passes at 85.16% branch-aware coverage; Ruff,
+- The complete 292-test suite passes at 85.14% branch-aware coverage; Ruff,
   mypy, release metadata validation and the repository secret scan pass.
+- The complete Git history and the downloadable 0.9.1 release assets were
+  audited before publication; no proprietary application package, user camera
+  library, credential file, account credential, token or private key was found.
 
 ## [0.9.1] - 2026-08-27
 

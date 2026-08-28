@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ha-owlet-cam"
-version = "0.9.1"
+version = "0.9.2"
 description = "Home Assistant custom integration for Owlet cameras"
 readme = "README.md"
 # This constrains the local/CI test toolchain, not HACS installation. The
