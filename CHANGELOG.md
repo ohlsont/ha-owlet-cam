@@ -2,7 +2,7 @@
 
 All notable changes are documented here. Versions follow semantic versioning.
 
-## [0.9.1] - Unreleased
+## [0.9.1] - 2026-08-27
 
 ### Added
 
@@ -17,8 +17,11 @@ All notable changes are documented here. Versions follow semantic versioning.
 
 - The complete 292-test suite passes at 85.22% branch-aware coverage; Ruff,
   mypy, three helper compilation modes and reproducible AArch64 helper packaging
-  pass. Real Owlet Cam 1 / Yellow readings remain pending and are not yet
-  claimed as supported.
+  pass.
+- A checksum-verified Yellow deployment on Core 2026.8.3 produced real sound
+  (`0 dB`), illuminance (`17 lx`) and Wi-Fi (`-49 dBm`) readings while the same
+  bounded session retained H.264 and AAC. Temperature and humidity remained
+  unknown on the tested Owlet Cam 1 and are not claimed as real-device-validated.
 
 ## [0.8.0] - Unreleased
 

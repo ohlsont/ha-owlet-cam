@@ -266,8 +266,11 @@ with video frames and the other readings use a bounded local telemetry request.
 No second camera connection, MQTT broker or cloud sensor polling is introduced.
 
 The entities retain their last valid value after viewing stops and update again
-when a live-stream session is active. The feature is opt-in until its values
-have been compared with a real Owlet Cam 1.
+when a live-stream session is active. The feature remains opt-in. On the tested
+Owlet Cam 1 / Home Assistant Yellow setup, a bounded v0.9.1 probe produced sound
+level, illuminance and Wi-Fi readings. Temperature and humidity remained
+unavailable, so those two entities may stay `unknown` and are not yet claimed as
+validated on Cam 1.
 
 ### Embedded diagnostics
 
