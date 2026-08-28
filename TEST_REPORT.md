@@ -3,7 +3,7 @@
 Evidence is recorded conservatively. “Passed” is used only with captured test
 or real-system evidence.
 
-## Public beta v0.9.3 release candidate — 2026-08-28
+## Public beta v0.9.3 release and HACS update — 2026-08-28
 
 - The complete 292-test suite passed locally at 85.14% branch-aware coverage.
   Ruff format/check, mypy, release metadata validation, JSON validation, the
@@ -17,9 +17,27 @@ or real-system evidence.
   Integration and helper runtime behavior are unchanged from 0.9.2, whose HACS
   installation, Yellow restart recovery and bounded real H.264/AAC camera probe
   evidence remains recorded below.
-- A separate 0.9.3 Yellow deployment and an independent household's clean setup
-  are unperformed and are not claimed. The release is intentionally labelled a
-  public beta; it is not a stable 1.0 release or a HACS-defaults submission.
+- The v0.9.3 tag release workflow passed all tests and release gates, built and
+  inspected the HACS archive, AArch64 helper and desktop preparer, and published
+  checksums, an SPDX SBOM and a licence manifest. The GitHub release is public,
+  non-draft and contains no proprietary runtime material.
+- HACS 2.0.5 on the tested AArch64 Yellow force-refreshed the public repository,
+  discovered v0.9.3, downloaded that exact release, and reported installed and
+  available versions both v0.9.3 with no pending update. Core configuration was
+  valid before the MCP-initiated restart.
+- After restart, the existing config entry loaded with its options and private
+  runtime material preserved. Deferred native validation reached `ready` with
+  exact helper 0.9.3, SDK-key presence, all five AArch64 libraries compatible,
+  no writable-executable segments and no safe error. Helper accounting reported
+  started 1/reaped 1/all reaped with zero forced kills.
+- Cloud and camera-credential booleans were on, the camera entity was idle, all
+  27 Owlet entities were present, active Repairs were zero and a structured
+  system-log search returned zero Owlet entries. No new real-media probe was run
+  because this release changes support/distribution material only; prior 0.9.2
+  H.264/AAC evidence is not relabelled as a 0.9.3 media test.
+- An independent household's clean setup remains unperformed and is not
+  claimed. The release is intentionally labelled a public beta; it is not a
+  stable 1.0 release or a HACS-defaults submission.
 
 | Milestone | Commit | Integration version | Home Assistant version | Home Assistant OS version | Architecture | Camera model | Camera firmware | Automated tests | Yellow test | Real camera test | Result | Evidence | Unperformed tests | Known issues |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
