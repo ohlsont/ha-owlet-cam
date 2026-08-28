@@ -269,8 +269,10 @@ The entities retain their last valid value after viewing stops and update again
 when a live-stream session is active. The feature remains opt-in. On the tested
 Owlet Cam 1 / Home Assistant Yellow setup, a bounded v0.9.1 probe produced sound
 level, illuminance and Wi-Fi readings. Temperature and humidity remained
-unavailable, so those two entities may stay `unknown` and are not yet claimed as
-validated on Cam 1.
+unavailable, and the Dream app did not display either value during the same
+validation period. Those two entities may therefore stay `unknown`; this is
+consistent with the tested camera/firmware not currently reporting them, not
+evidence that Home Assistant discarded app-visible readings.
 
 ### Embedded diagnostics
 
